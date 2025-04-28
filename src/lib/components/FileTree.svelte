@@ -4,6 +4,8 @@
   import type { VfsError } from '$lib/services/fileSystemService';
   import TreeNode from './TreeNode.svelte';
   import Icon from './Icon.svelte';
+  import type { PageData } from '../../routes/app/$types';
+  export let data:PageData
 
   // --- Props ---
   export let selectedFileId: string | null = null; // Allow two-way binding
@@ -47,7 +49,7 @@
       clearNotification();
 
       // Call the store's delete action
-      const { success, error: deleteError } = await vfsStore.deleteNode(nodeId, parentId);
+      const { success, error: deleteError } = await vfsStore.deleteNode(data.supabase,nodeId, parentId);
 
       if (deleteError) {
            showNotification('error', `Failed to delete ${nodeName}: ${deleteError.message}`);
@@ -71,11 +73,12 @@
       if (!name || name.trim() === '') return;
 
       // Call the store's create action
-      const { success, error: createError } = await vfsStore.createNode({
+      const { success, error: createError } = await vfsStore.createNode(data.supabase,{
           name: name.trim(),
           is_folder: isFolder,
           parent_id: parentId,
-          content: isFolder ? null : ''
+          content: isFolder ? null : '',
+          user_id:data?.user?.id
       });
 
       if (createError) {
@@ -101,7 +104,7 @@
   // --- Lifecycle ---
   onMount(() => {
       // Load root nodes via the store on mount
-      vfsStore.loadNodes(null,true);
+      vfsStore.loadNodes(data.supabase,null,true);
   });
 
 </script>
@@ -114,7 +117,7 @@
         <!-- Pass parentId=null for root actions -->
         <button title="New Root File" on:click={() => handleCreate({ detail: { parentId: null, isFolder: false } } as any)} class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded" disabled={isPerformingAction}><Icon name="plus" /></button>
         <button title="New Root Folder" on:click={() => handleCreate({ detail: { parentId: null, isFolder: true } } as any)} class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded" disabled={isPerformingAction}><Icon name="folder" /></button>
-        <button title="Refresh" on:click={() => vfsStore.loadNodes(null, true)} class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded" disabled={isLoadingRoot || isPerformingAction}>
+        <button title="Refresh" on:click={() => vfsStore.loadNodes(data.supabase,null, true)} class="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded" disabled={isLoadingRoot || isPerformingAction}>
             {#if isLoadingRoot}<Icon name="loading"/>{:else}🔄{/if}
         </button>
     </div>
@@ -122,7 +125,14 @@
 
   <!-- Notification Area -->
   {#if notification}
-      <!-- ... (notification element as before) ... -->
+      <div class="p-2 text-xs text-center"
+           class:bg-red-100={notification.type === 'error'}
+           class:text-red-700={notification.type === 'error'}
+           class:bg-green-100={notification.type === 'success'}
+           class:text-green-700={notification.type === 'success'}
+           role="alert">
+          {notification.message}
+      </div>
   {/if}
 
 
@@ -133,7 +143,7 @@
     {:else if rootError}
       <div class="p-4 text-red-600">
         Error loading file tree: {rootError.message}
-        <button on:click={() => vfsStore.loadNodes(null, true)} class="ml-2 underline">Retry</button>
+        <button on:click={() => vfsStore.loadNodes(data.supabase, null, true)} class="ml-2 underline">Retry</button>
       </div>
     {:else if rootNodes.length === 0 && !isLoadingRoot}
         <div class="p-4 text-center text-gray-500 italic">No files or folders.</div>
@@ -142,6 +152,7 @@
        <!-- We'll have TreeNode import the store -->
       {#each rootNodes as node (node.id)}
         <TreeNode
+          {data}
           {node}
           level={0}
           bind:selectedFileId

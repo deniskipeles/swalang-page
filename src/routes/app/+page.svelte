@@ -98,6 +98,7 @@
                 <Icon name="folder" class="w-5 h-5"/> <!-- Use a Menu/Hamburger icon ideally -->
             </button>
             <h4 class="text-lg font-bold">Code Box</h4>
+            <!-- <h4 class="text-lg font-bold">Coding Assistant</h4> -->
         </div>
       </header>
 
@@ -121,7 +122,7 @@
             class="h-full flex-shrink-0 lg:block lg:w-1/4 lg:min-w-[250px] lg:max-w-[400px]"
             class:hidden={isSmallScreen}  
         >
-          <FileTree bind:selectedFileId on:notification={handleNotification} />
+          <FileTree {data} bind:selectedFileId on:notification={handleNotification} />
         </div>
 
         <!-- Editor Panel (Desktop Visible, Mobile takes full width when file selected) -->
@@ -131,6 +132,7 @@
         >
             <FileEditor
                 fileId={selectedFileId}
+                parentData={data}
                 on:notification={handleNotification}
                 on:contentChange={handleEditorContentChange}
             />
@@ -144,7 +146,7 @@
               <AIChat
                   context={editorContentForAI}
                   on:notification={handleNotification}
-                  
+                  {data}
               />
         </div>
 
@@ -170,7 +172,7 @@
                     </div>
                     <!-- File Tree Component -->
                     <div class="flex-grow overflow-y-auto">
-                         <FileTree bind:selectedFileId on:notification={handleNotification} />
+                         <FileTree {data} bind:selectedFileId on:notification={handleNotification} />
                     </div>
                 </div>
             {/if}
@@ -194,7 +196,7 @@
                      </div>
                     <!-- AI Chat Component -->
                      <div class="flex-grow overflow-y-auto min-h-0">
-                         <AIChat context={editorContentForAI} on:notification={handleNotification} />
+                         <AIChat {data} context={editorContentForAI} on:notification={handleNotification} />
                      </div>
                  </div>
              {/if}

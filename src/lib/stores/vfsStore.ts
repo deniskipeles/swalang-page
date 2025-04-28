@@ -1,6 +1,9 @@
 import { writable, get } from 'svelte/store';
 import * as vfs from '$lib/services/fileSystemService';
 import type { FileNode, VfsError } from '$lib/services/fileSystemService';
+import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '$lib/types/database.types'; // Import generated types
+import { supabase } from '$lib/supabaseClient';
 
 // Define the shape of our store's state
 export interface VfsState {
@@ -31,7 +34,7 @@ function getParentKey(parentId: string | null): string {
  * Loads nodes for a given parent ID (or root if null).
  * Fetches from API if not already loaded or if forced.
  */
-async function loadNodes(parentId: string | null, forceReload: boolean = false) {
+async function loadNodes(client: SupabaseClient<Database> = supabase, parentId: string | null, forceReload: boolean = false) {
     const parentKey = getParentKey(parentId);
     const currentState = get({ subscribe }); // Get current state non-reactively
 
@@ -46,7 +49,7 @@ async function loadNodes(parentId: string | null, forceReload: boolean = false) 
         errors: { ...state.errors, [parentKey]: null },
     }));
 
-    const { data, error } = await vfs.listFiles(undefined, parentId);
+    const { data, error } = await vfs.listFiles(client, parentId);
 
     update(state => ({
         ...state,
@@ -59,7 +62,7 @@ async function loadNodes(parentId: string | null, forceReload: boolean = false) 
 /**
  * Creates a file or folder via the API and updates the store.
  */
-async function createNodeWrapper(details: {
+async function createNodeWrapper(client: SupabaseClient<Database> = supabase,details: {
     name: string,
     content?: string | null,
     is_folder: boolean,
@@ -67,7 +70,7 @@ async function createNodeWrapper(details: {
     user_id: string | null
 }): Promise<{ success: boolean, error?: VfsError }> {
     update(state => ({ ...state, isPerformingAction: true }));
-    const { data: newNode, error } = await vfs.createFile(undefined, details);
+    const { data: newNode, error } = await vfs.createFile(client, details);
     let success = false;
 
     if (newNode) {
@@ -95,9 +98,9 @@ async function createNodeWrapper(details: {
 /**
  * Updates a file/folder name via the API and updates the store.
  */
-async function renameNodeWrapper(nodeId: string, newName: string): Promise<{ success: boolean, error?: VfsError }> {
+async function renameNodeWrapper(client: SupabaseClient<Database> = supabase,nodeId: string, newName: string): Promise<{ success: boolean, error?: VfsError }> {
     update(state => ({ ...state, isPerformingAction: true }));
-    const { data: updatedNode, error } = await vfs.updateFile(undefined, nodeId, { name: newName });
+    const { data: updatedNode, error } = await vfs.updateFile(client, nodeId, { name: newName });
     let success = false;
 
     if (updatedNode) {
@@ -131,9 +134,9 @@ async function renameNodeWrapper(nodeId: string, newName: string): Promise<{ suc
 /**
  * Deletes a file/folder via the API and updates the store.
  */
-async function deleteNodeWrapper(nodeId: string, parentId: string | null): Promise<{ success: boolean, error?: VfsError }> {
+async function deleteNodeWrapper(client: SupabaseClient<Database> = supabase,nodeId: string, parentId: string | null): Promise<{ success: boolean, error?: VfsError }> {
     update(state => ({ ...state, isPerformingAction: true }));
-    const { error } = await vfs.deleteFile(undefined, nodeId);
+    const { error } = await vfs.deleteFile(client, nodeId);
     let success = false;
 
     if (!error) {

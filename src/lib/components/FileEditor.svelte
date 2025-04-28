@@ -10,6 +10,8 @@
     // swalang language syntax
     import { registerSwLanguage } from '$lib/monaco/swLanguage';
   
+    import type { PageData } from '../../routes/app/$types';
+    export let parentData:PageData
     // --- Monaco Editor Setup ---
     // Type definition for the Monaco library (will be populated by dynamic import)
     let monaco: typeof import('monaco-editor');
@@ -116,7 +118,7 @@
   
       // 4. Fetch file data using the VFS service
       console.log(`loadFile: Fetching file data for ID: ${id}`);
-      const { data, error: fetchError } = await vfs.getFile(undefined, id);
+      const { data, error: fetchError } = await vfs.getFile(parentData.supabase, id);
   
       // 5. Process the fetch result
       if (fetchError) {
@@ -261,7 +263,7 @@
       console.log(`Saving file ${fileData.id}...`);
   
       // Call the VFS service to update the file
-      const { data, error: saveError } = await vfs.updateFile(undefined, fileData.id, {
+      const { data, error: saveError } = await vfs.updateFile(parentData.supabase, fileData.id, {
         content: currentContent,
       });
   
@@ -398,7 +400,20 @@
       <div class="font-semibold truncate flex items-center min-w-0 mr-2" title={fileData?.name ?? (isLoading ? 'Loading...' : 'No file selected')}>
           {#if fileData && !isLoading}
               <!-- Show file/folder icon and name -->
-              <span class="mr-1 flex-shrink-0"><Icon name={fileData.is_folder ? 'folder' : 'file'} class="w-4 h-4 align-text-bottom" /></span>
+              <span class="mr-1 flex-shrink-0">
+                <Icon 
+                  name={
+                    fileData.is_folder
+                      ? 'folder'
+                      : fileData.name.endsWith('.sw')
+                        ? 'swalang'
+                        : 'file'
+                  } 
+                   height={20} width={20}
+                  class="w-4 h-4 align-text-bottom"
+                />
+                <!-- <Icon name={fileData.is_folder ? 'folder' : 'file'} class="w-4 h-4 align-text-bottom" /> -->
+              </span>
               <span class="truncate">{fileData.name}</span>
               <!-- Show unsaved changes indicator (*) -->
               {#if isDirty}
@@ -415,7 +430,8 @@
                <span class="mr-1 flex-shrink-0 text-red-500"><Icon name="file" class="w-4 h-4 align-text-bottom"/></span> Error Loading
           {:else if fileData?.is_folder}
                <!-- Show folder name when a folder is selected -->
-               <span class="mr-1 flex-shrink-0"><Icon name="folder" class="w-4 h-4 align-text-bottom"/></span> <span class="truncate">{fileData.name}</span>
+               <span class="mr-1 flex-shrink-0">
+                <Icon name="folder" class="w-4 h-4 align-text-bottom"/></span> <span class="truncate">{fileData.name}</span>
           {:else}
                <!-- Fallback state -->
                No File Selected

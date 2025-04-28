@@ -1,10 +1,14 @@
 <!-- src/lib/components/Icon.svelte -->
 <script lang="ts">
-    export let name: 'folder' | 'file' | 'chevron-right' | 'chevron-down' | 'plus' | 'trash' | 'edit' | 'loading';
+    export let name: 'swalang'|'folder' | 'file' | 'chevron-right' | 'chevron-down' | 'plus' | 'trash' | 'edit' | 'loading';
     // Basic SVG examples - replace with a proper library or better SVGs
+    export let height = 16
+    export let width = 16
   </script>
   
-  {#if name === 'folder'}
+  {#if name === 'swalang'}
+    <img width={width} height={height} src='/favicon.png' alt="sw"/>
+  {:else if name === 'folder'}
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
   {:else if name === 'file'}
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>

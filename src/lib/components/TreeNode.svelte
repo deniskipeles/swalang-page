@@ -3,6 +3,8 @@
   import { vfsStore } from '$lib/stores/vfsStore'; // Import the store
   import type { FileNode, VfsError } from '$lib/services/fileSystemService';
   import Icon from './Icon.svelte';
+  import type { PageData } from '../../routes/app/$types';
+  export let data:PageData
 
   export let node: FileNode;
   export let level = 0;
@@ -39,7 +41,7 @@
   async function loadChildren() {
     if (!node.is_folder) return;
     // Use store action to load children
-    vfsStore.loadNodes(node.id);
+    vfsStore.loadNodes(data.supabase,node.id);
   }
 
   async function toggleExpand() {
@@ -77,9 +79,10 @@
 
       const originalName = node.name; // Keep original for potential revert message
       // Call the store's rename action
-      const { success, error: renameError } = await vfsStore.renameNode(node.id, renameValue.trim());
+      const { success, error: renameError } = await vfsStore.renameNode(data.supabase,node.id, renameValue.trim());
 
       if (renameError) {
+          // console.log(renameError)
            dispatch('error', renameError);
            // Optionally revert renameValue or show error near input
            renameValue = originalName; // Revert on error
@@ -91,7 +94,14 @@
       isRenaming = false; // Needs to happen regardless of success/failure
   }
 
-  function handleRenameKeyDown(event: KeyboardEvent) { /* ... (as before) ... */ }
+  function handleRenameKeyDown(event: KeyboardEvent) {
+        if (event.key === 'Enter') {
+            handleRename();
+        } else if (event.key === 'Escape') {
+            isRenaming = false;
+            renameValue = node.name; // Revert on escape
+        }
+    }
 
   function requestDelete() {
       if (confirm(`Are you sure you want to delete "${node.name}"? ${node.is_folder ? '(This will delete all its contents!)' : ''}`)) {
@@ -135,7 +145,16 @@
     {:else} <span class="w-4 inline-block"></span> {/if}
 
     <!-- Icon -->
-    <span class="flex-shrink-0 w-4"><Icon name={node.is_folder ? 'folder' : 'file'} /></span>
+    <span class="flex-shrink-0 w-4">
+      <!-- <Icon name={node.is_folder ? 'folder' : 'file'} /> -->
+      <Icon name={
+        node.is_folder
+          ? 'folder'
+          : node.name.endsWith('.sw')
+            ? 'swalang'
+            : 'file'
+      } height={20} width={20} />      
+    </span>
 
     <!-- Name / Rename Input -->
     <span class="flex-grow truncate">
@@ -162,7 +181,7 @@
   {#if childrenError}
     <div class="pl-6 text-red-600 text-xs" style={`padding-left: ${(level + 1) * 1.5 + 0.25}rem;`}>
         Error loading contents: {childrenError.message}
-        <button on:click={() => vfsStore.loadNodes(node.id, true)} class="ml-1 underline text-xs">Retry</button>
+        <button on:click={() => vfsStore.loadNodes(data.supabase,node.id, true)} class="ml-1 underline text-xs">Retry</button>
     </div>
   {/if}
 
@@ -171,6 +190,7 @@
     <div class="children">
       {#each children as childNode (childNode.id)}
         <svelte:self
+            {data}
             node={childNode}
             level={level + 1}
             bind:selectedFileId

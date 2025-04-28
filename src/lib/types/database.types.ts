@@ -127,6 +127,13 @@ export type Database = {
             referencedRelation: "collaborate_swalang_suggestions"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "collaborate_swalang_suggestion_votes_suggestion_id_fkey"
+            columns: ["suggestion_id"]
+            isOneToOne: false
+            referencedRelation: "collaborate_swalang_view_suggestion_details"
+            referencedColumns: ["id"]
+          },
         ]
       }
       collaborate_swalang_suggestions: {
@@ -173,93 +180,107 @@ export type Database = {
           },
         ]
       }
-      collaborative_categories: {
+      content_events: {
         Row: {
-          created_at: string | null
+          created_at: string
+          created_by: string | null
           description: string | null
+          end_datetime: string | null
+          featured_image_url: string | null
           id: string
-          name: string
+          is_published: boolean
+          last_edited_by: string | null
+          location_address: string | null
+          location_type: string
+          location_virtual_url: string | null
+          slug: string
+          start_datetime: string
+          summary: string | null
+          title: string
+          updated_at: string
         }
         Insert: {
-          created_at?: string | null
+          created_at?: string
+          created_by?: string | null
           description?: string | null
+          end_datetime?: string | null
+          featured_image_url?: string | null
           id?: string
-          name: string
+          is_published?: boolean
+          last_edited_by?: string | null
+          location_address?: string | null
+          location_type?: string
+          location_virtual_url?: string | null
+          slug: string
+          start_datetime: string
+          summary?: string | null
+          title: string
+          updated_at?: string
         }
         Update: {
-          created_at?: string | null
+          created_at?: string
+          created_by?: string | null
           description?: string | null
+          end_datetime?: string | null
+          featured_image_url?: string | null
           id?: string
-          name?: string
+          is_published?: boolean
+          last_edited_by?: string | null
+          location_address?: string | null
+          location_type?: string
+          location_virtual_url?: string | null
+          slug?: string
+          start_datetime?: string
+          summary?: string | null
+          title?: string
+          updated_at?: string
         }
         Relationships: []
       }
-      collaborative_keywords: {
+      content_news_articles: {
         Row: {
-          category_id: string | null
-          created_at: string | null
-          description: string | null
-          english_keyword: string
+          content: string | null
+          created_at: string
+          created_by: string | null
+          featured_image_url: string | null
           id: string
+          is_published: boolean
+          last_edited_by: string | null
+          published_at: string | null
+          slug: string
+          summary: string | null
+          title: string
+          updated_at: string
         }
         Insert: {
-          category_id?: string | null
-          created_at?: string | null
-          description?: string | null
-          english_keyword: string
+          content?: string | null
+          created_at?: string
+          created_by?: string | null
+          featured_image_url?: string | null
           id?: string
+          is_published?: boolean
+          last_edited_by?: string | null
+          published_at?: string | null
+          slug: string
+          summary?: string | null
+          title: string
+          updated_at?: string
         }
         Update: {
-          category_id?: string | null
-          created_at?: string | null
-          description?: string | null
-          english_keyword?: string
+          content?: string | null
+          created_at?: string
+          created_by?: string | null
+          featured_image_url?: string | null
           id?: string
+          is_published?: boolean
+          last_edited_by?: string | null
+          published_at?: string | null
+          slug?: string
+          summary?: string | null
+          title?: string
+          updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "collaborative_keywords_category_id_fkey"
-            columns: ["category_id"]
-            isOneToOne: false
-            referencedRelation: "collaborative_categories"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      collaborative_suggestions: {
-        Row: {
-          created_at: string | null
-          description: string | null
-          id: string
-          keyword_id: string | null
-          submitted_by: string | null
-          swahili_word: string
-        }
-        Insert: {
-          created_at?: string | null
-          description?: string | null
-          id?: string
-          keyword_id?: string | null
-          submitted_by?: string | null
-          swahili_word: string
-        }
-        Update: {
-          created_at?: string | null
-          description?: string | null
-          id?: string
-          keyword_id?: string | null
-          submitted_by?: string | null
-          swahili_word?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "collaborative_suggestions_keyword_id_fkey"
-            columns: ["keyword_id"]
-            isOneToOne: false
-            referencedRelation: "collaborative_keywords"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       files: {
         Row: {
@@ -302,14 +323,114 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          full_name: string | null
+          id: string
+          updated_at: string
+          username: string | null
+          website: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          full_name?: string | null
+          id: string
+          updated_at?: string
+          username?: string | null
+          website?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          updated_at?: string
+          username?: string | null
+          website?: string | null
+        }
+        Relationships: []
+      }
+      swalang_documentation_pages: {
+        Row: {
+          category: string | null
+          content_eng: string | null
+          content_sw: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          last_edited_by: string | null
+          slug: string
+          summary: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string | null
+          content_eng?: string | null
+          content_sw?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_edited_by?: string | null
+          slug: string
+          summary?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string | null
+          content_eng?: string | null
+          content_sw?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          last_edited_by?: string | null
+          slug?: string
+          summary?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
-      [_ in never]: never
+      collaborate_swalang_view_suggestion_details: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string | null
+          description: string | null
+          id: string | null
+          is_approved: boolean | null
+          keyword_id: string | null
+          submitted_by: string | null
+          submitter_avatar_url: string | null
+          submitter_username: string | null
+          swahili_word: string | null
+          total_votes: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collaborate_swalang_suggestions_keyword_id_fkey"
+            columns: ["keyword_id"]
+            isOneToOne: false
+            referencedRelation: "collaborate_swalang_keywords"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       collaborate_swalang_fn_get_suggestion_votes: {
         Args: { p_suggestion_id: string }
         Returns: number
+      }
+      get_distinct_doc_categories: {
+        Args: Record<PropertyKey, never>
+        Returns: string[]
       }
     }
     Enums: {

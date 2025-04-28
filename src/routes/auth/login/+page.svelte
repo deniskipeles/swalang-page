@@ -38,7 +38,7 @@
     </form>
 
     <!-- GitHub OAuth -->
-    <form method="POST" action="?/oauth" class="space-y-2">
+    <form method="POST" action="/auth?/oauth" class="space-y-2">
       <button
         name="provider"
         value="github"

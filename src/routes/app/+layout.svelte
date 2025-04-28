@@ -18,17 +18,19 @@
   </script>
   
   <div class="min-h-screen flex flex-col">
-    <header class="bg-gray-800 text-white p-4 flex justify-between items-center">
-      <h1 class="text-xl font-bold">AI Coding Assistant</h1>
+    <!-- <header class="bg-gray-800 text-white p-4 flex justify-between items-center">
+      <h1 class="text-xs font-bold">Coding Assistant</h1>
       <div>
           {#if data.session?.user}
               <span class="mr-4">Welcome, {data.session.user.email || data.session.user.id}</span>
-              <button on:click={handleLogout} class="bg-red-600 hover:bg-red-700 text-white py-1 px-3 rounded">
-                  Logout
-              </button>
+              <form method="POST" action="auth?/signout">
+                <button class="bg-red-600 hover:bg-red-700 text-white py-1 px-3 rounded">
+                    Logout
+                </button>
+              </form>
           {/if}
       </div>
-    </header>
+    </header> -->
   
     <main class="flex-grow p-4">
       <!-- Nested route content will be rendered here -->

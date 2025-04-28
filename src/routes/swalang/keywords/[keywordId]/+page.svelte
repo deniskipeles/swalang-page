@@ -6,6 +6,7 @@
     import { marked } from 'marked';
     import DOMPurify from 'dompurify';
     import { tick } from 'svelte';
+	import { castVote } from '$lib/services/swahiliCollaborationService';
   
     export let data: PageData;
     export let form: ActionData;
@@ -47,7 +48,7 @@
   
       const currentSuggestion = optimisticSuggestions[index];
       const currentVote = currentSuggestion.user_vote;
-      const currentScore = currentSuggestion.votes;
+      const currentScore = currentSuggestion.total_votes;
   
       const actualNewVote = (newVote === currentVote) ? 0 : newVote;
   
@@ -62,9 +63,14 @@
   
       optimisticSuggestions = [
         ...optimisticSuggestions.slice(0, index),
-        { ...currentSuggestion, user_vote: actualNewVote, votes: optimisticScore },
+        { ...currentSuggestion, user_vote: actualNewVote, total_votes: optimisticScore },
         ...optimisticSuggestions.slice(index + 1)
       ];
+      castVote(
+                data.supabase,
+                suggestionId,
+                newVote as -1 | 0 | 1
+            )
     }
   </script>
   
@@ -129,7 +135,7 @@
                     <path fill-rule="evenodd" d="M10 17a.75.75 0 0 1-.75-.75V5.612L5.99 9.47a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1-1.06 1.06L10.75 5.612V16.25A.75.75 0 0 1 10 17Z" clip-rule="evenodd"/>
                   </svg>
                 </button>
-                <span class="font-bold text-sm text-gray-700 dark:text-gray-300" title="Net votes">{suggestion.votes}</span>
+                <span class="font-bold text-sm text-gray-700 dark:text-gray-300" title="Net votes">{suggestion.total_votes}</span>
                 <!-- Downvote -->
                 <button
                   type="submit"
@@ -166,7 +172,7 @@
                 </div>
               {/if}
               <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                Submitted by {suggestion.submitter_email || 'User'}
+                Submitted by {suggestion.submitter_username || 'User'}
                 on {new Date(suggestion.created_at).toLocaleDateString()}
                 {#if suggestion.is_approved}
                   <span class="ml-2 px-1.5 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300 rounded-full text-[0.6rem] font-medium">Approved</span>

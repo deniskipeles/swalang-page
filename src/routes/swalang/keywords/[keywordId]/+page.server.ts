@@ -35,7 +35,7 @@ export const load: PageServerLoad = async (event) => {
     const [keywordResult, suggestionsResult] = await Promise.all([
         getKeywordById(supabase, keywordId),
         // Pass authenticated client to get user-specific vote status
-        listSuggestionsByKeyword(session ? supabase : supabase, keywordId)
+        listSuggestionsByKeyword(supabase, keywordId)
     ]);
 
     // Handle keyword fetch error or not found
@@ -111,6 +111,7 @@ export const actions: Actions = {
         const formData = await request.formData();
         const suggestionId = formData.get('suggestionId');
         const voteValue = formData.get('voteValue'); // Will be string "-1", "0", or "1"
+        console.log(suggestionId, voteValue)
 
         try {
             const validatedData = castVoteSchema.parse({ suggestionId, voteValue });

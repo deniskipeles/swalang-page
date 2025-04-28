@@ -16,6 +16,8 @@
   // Utility Imports
   import { marked } from 'marked'; // For Markdown rendering
   import DOMPurify from 'dompurify'; // For sanitizing HTML
+  import type { PageData } from '../../routes/app/$types';
+  export let data:PageData
 
   // --- Component Properties ---
   /** Context string passed from parent (e.g., editor content) */
@@ -222,7 +224,7 @@
 
     try {
       // 4. Authenticate: Get Supabase JWT token
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      const { data: { session }, error: sessionError } = await data.supabase.auth.getSession();
       if (sessionError || !session?.access_token) {
         throw new Error(`Authentication error: ${sessionError?.message || 'Not logged in'}`);
       }

@@ -3,9 +3,7 @@
     import { enhance } from '$app/forms';
     import Icon from '$lib/components/Icon.svelte';
     import { invalidateAll } from '$app/navigation';
-    import { marked } from 'marked';
-    import DOMPurify from 'dompurify';
-    import { tick } from 'svelte';
+    import { renderMarkdown } from '$lib/utils/renderMarkdown';
 	import { castVote } from '$lib/services/swahiliCollaborationService';
   
     export let data: PageData;
@@ -17,18 +15,6 @@
     let optimisticSuggestions = data.suggestions;
     $: optimisticSuggestions = data.suggestions;
   
-    async function renderMarkdown(markdown: string | null | undefined): Promise<string> {
-      if (!markdown) return '';
-      try {
-        const rawHtml = await marked.parse(markdown, { async: true, gfm: true, breaks: true });
-        return DOMPurify.sanitize(rawHtml);
-      } catch (error) {
-        console.error("Markdown rendering/sanitization failed:", error);
-        const preElement = document.createElement('pre');
-        preElement.textContent = markdown;
-        return preElement.outerHTML;
-      }
-    }
   
     function handleSuggestionFormUpdate() {
       isSubmittingSuggestion = true;

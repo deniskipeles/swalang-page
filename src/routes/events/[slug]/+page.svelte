@@ -1,12 +1,10 @@
 <script lang="ts">
     import type { PageData } from './$types';
-    import { marked } from 'marked';
-    import DOMPurify from 'dompurify';
+    import { renderMarkdown } from '$lib/utils/renderMarkdown';
     import Icon from '$lib/components/Icon.svelte';
   
     export let data: PageData; // { eventData }
   
-    async function renderMarkdown(markdown: string | null | undefined): Promise<string> { /* ... */ }
     function formatDateTime(date: Date | null | undefined, style: 'medium' | 'short' = 'medium'): string {
        if (!date) return '';
        try {

@@ -1,13 +1,9 @@
 <script lang="ts">
     import type { PageData } from './$types';
-    import { marked } from 'marked';
-    import DOMPurify from 'dompurify';
+    import { renderMarkdown } from '$lib/utils/renderMarkdown';
+    import { formatDateLong } from '$lib/utils/formatDate';
   
     export let data: PageData; // { article }
-  
-    // Reuse or import markdown renderer
-    async function renderMarkdown(markdown: string | null | undefined): Promise<string> { /* ... */ }
-    function formatDate(date: Date | null | undefined): string { /* ... */ }
   
   </script>
   
@@ -22,7 +18,7 @@
               <header class="mb-6 pb-4 border-b dark:border-gray-700">
                   <h1 class="text-4xl font-bold tracking-tight text-gray-900 dark:text-gray-100 mb-2">{data.article.title}</h1>
                   <p class="text-sm text-gray-500 dark:text-gray-400">
-                      Published on {formatDate(data.article.published_at)}
+                      Published on {formatDateLong(data.article.published_at)}
                        <!-- TODO: Add Author name by joining profile -->
                        <!-- | Last updated on {formatDate(data.article.updated_at)} -->
                   </p>

@@ -2,18 +2,11 @@
     import type { PageData } from './$types';
     import Icon from '$lib/components/Icon.svelte'; // Assuming Icon component
     // Helper for date formatting (create if needed)
-    // import { formatDate } from '$lib/utils/dateUtils';
+    import { formatDateLong } from '$lib/utils/formatDate';
   
     export let data: PageData;
   
-    function formatDate(date: Date | null | undefined): string {
-       if (!date) return '';
-       try {
-           return new Date(date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-       } catch {
-           return 'Invalid Date';
-       }
-    }
+    
   
   </script>
   
@@ -52,7 +45,7 @@
                            {#if article.summary}
                               <p class="text-sm text-gray-600 dark:text-gray-400 mb-3 line-clamp-3">{article.summary}</p>
                            {/if}
-                           <p class="text-xs text-gray-400 dark:text-gray-500">Published: {formatDate(article.published_at)}</p>
+                           <p class="text-xs text-gray-400 dark:text-gray-500">Published: {formatDateLong(article.published_at)}</p>
                        </div>
                   </a>
               {/each}

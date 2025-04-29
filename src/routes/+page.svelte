@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PageData } from './$types';
   import Icon from '$lib/components/Icon.svelte'; // Assuming Icon component
+	import Wasm from './Wasm.svelte';
 
   export let data: PageData; // { docs, news, events }
 
@@ -17,6 +18,7 @@
 </script>
 
 <div class="container mx-auto p-4 md:p-8 space-y-12">
+    <!-- <Wasm/> -->
 
     <!-- Welcome/Intro Section -->
     <section class="text-center py-8">

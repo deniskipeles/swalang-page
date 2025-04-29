@@ -11,6 +11,8 @@
     import { registerSwLanguage } from '$lib/monaco/swLanguage';
   
     import type { PageData } from '../../routes/app/$types';
+    import { getWasmExports, loadWasm } from '$lib/utils/wasm';
+    import { renderMarkdown } from '$lib/utils/renderMarkdown';
     export let parentData:PageData
     // --- Monaco Editor Setup ---
     // Type definition for the Monaco library (will be populated by dynamic import)
@@ -389,112 +391,297 @@
             loadFile(currentFileIdInternal); // Trigger the load process for the new file
         }
     }
+
+
+
+
+
+
+
+
+
+
+    // --- State for Console, Preview, Runner ---
+    let showBottomPanel = false; // Controls visibility of the entire bottom panel
+    let activeTab: 'console' | 'preview' = 'console'; // Which tab is active
+    let consoleOutput: string[] = []; // Array of lines for console output
+    let isRunningCode = false; // Flag for simulated execution state
+    let previewHtml = ''; // Holds the content for the HTML preview iframe
+    /** Appends a line to the console output state */
+    function logToConsole(message: string, type: 'log' | 'error' | 'info' = 'log') {
+        const timestamp = new Date().toLocaleTimeString();
+        // Add type prefix for potential styling later
+        consoleOutput = [...consoleOutput, `[${timestamp} ${type.toUpperCase()}]: ${message}`];
+        // Auto-scroll console (implementation needed in template or helper function)
+    }
+
+    /** Clears the console output */
+    function clearConsole() {
+        consoleOutput = [];
+    }
+
+    // let code = "";
+	  let output = "";
+    let wasm 
+    onMount(async () => {
+      await loadWasm();
+      wasm = getWasmExports();
+    });
+
+    /** Simulates running the code in the editor */
+    async function runCode() {
+        if (!editor || isRunningCode) return;
+
+        isRunningCode = true;
+        showBottomPanel = true; // Ensure panel is visible
+        activeTab = 'console'; // Switch to console tab
+        clearConsole(); // Clear previous output
+        logToConsole("Executing code...", 'info');
+        dispatch('notification', { type: 'success', message: 'Running code...' });
+
+        await tick(); // Allow UI to update
+
+        const code = editor.getValue();
+        const language = getLanguageFromFilename(fileData?.name);
+
+        // --- !!! DANGER ZONE: SIMULATION ONLY !!! ---
+        // Replace this section with actual secure execution logic (e.g., call to WASM or backend API)
+        console.log(`--- SIMULATING EXECUTION (${language}) ---`);
+        console.log(code);
+        // Simulate execution time
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        try {
+            // Simulate different outputs based on language (VERY basic example)
+            if (language === 'javascript' || language === 'typescript') {
+                logToConsole("Simulated JS Output: Hello from JS!");
+                logToConsole(`Code length: ${code.length}`);
+            } else if (language === 'python') {
+                logToConsole(window.runPylearn(code, fileData?.name));
+            } else if (language === 'html') {
+                logToConsole("HTML file detected. Use 'Preview' tab to view.", 'info');
+            } else if (language === 'swalang') {
+                logToConsole(`Swalang code detected (length: ${code.length}). Execution simulation...`);
+                logToConsole("Mfumo: Mipangilio imekamilika."); // System: Setup complete.
+                logToConsole("Matokeo: Hello Swalang!"); // Output: Hello Swalang!
+            }
+            else {
+                logToConsole(`Execution simulation finished for ${language}.`);
+            }
+            logToConsole("Execution successful (simulation).", 'info');
+        } catch (simulatedError: any) {
+            logToConsole(`Execution failed (simulation): ${simulatedError.message}`, 'error');
+        }
+        // --- !!! END SIMULATION !!! ---
+
+        isRunningCode = false;
+        dispatch('notification', null); // Clear running notification
+    }
+
+
+    /** Updates the HTML preview iframe content */
+    async function updatePreview() {
+        if (!editor) {
+            previewHtml = '<p class="p-4 text-sm italic text-gray-500">Editor not ready.</p>';
+            return;
+        }
+        const content = editor.getValue();
+        const language = getLanguageFromFilename(fileData?.name);
+
+        if (language === 'html') {
+            // Directly use HTML content (DOMPurify might be needed if content is untrusted)
+            // For untrusted HTML, sanitize it first:
+            // previewHtml = DOMPurify.sanitize(content);
+            previewHtml = content; // Assuming trusted for now
+        } else if (language === 'markdown') {
+            // Render Markdown to HTML
+            previewHtml = await renderMarkdown(content); // Reuse existing markdown renderer
+        } else {
+            // Show plain text for other languages
+            const pre = document.createElement('pre');
+            pre.textContent = content;
+            previewHtml = `<div class="p-2 text-xs font-mono">${pre.outerHTML}</div>`;
+        }
+    }
+    // Toggle bottom panel visibility
+    function toggleBottomPanel() {
+        showBottomPanel = !showBottomPanel;
+    }
+
+    // Switch active tab in bottom panel
+    function setActiveTab(tab: 'console' | 'preview') {
+        activeTab = tab;
+        if (tab === 'preview') {
+            updatePreview(); // Update preview when switching to it
+        }
+        showBottomPanel = true; // Ensure panel is visible when switching tab
+    }
+
+    // Update preview when content changes AND preview tab is active
+    $: if (editorIsReady && activeTab === 'preview' && showBottomPanel) {
+        // Maybe debounce this if updates are too frequent
+        updatePreview();
+    }
   
   </script>
   
   <!-- Template (HTML Structure) -->
   <div class="file-editor flex flex-col h-full text-sm" on:keydown={handleKeyDown}>
-    <!-- Header Section: Displays file name and save button -->
+    <!-- Header Section: File name, Save, Run buttons -->
     <div class="flex justify-between items-center p-2 border-b border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-900 flex-shrink-0">
       <!-- File Name and Status Display -->
       <div class="font-semibold truncate flex items-center min-w-0 mr-2" title={fileData?.name ?? (isLoading ? 'Loading...' : 'No file selected')}>
-          {#if fileData && !isLoading}
-              <!-- Show file/folder icon and name -->
-              <span class="mr-1 flex-shrink-0">
-                <Icon 
-                  name={
-                    fileData.is_folder
-                      ? 'folder'
-                      : fileData.name.endsWith('.sw')
-                        ? 'swalang'
-                        : 'file'
-                  } 
-                   height={20} width={20}
-                  class="w-4 h-4 align-text-bottom"
-                />
-                <!-- <Icon name={fileData.is_folder ? 'folder' : 'file'} class="w-4 h-4 align-text-bottom" /> -->
-              </span>
-              <span class="truncate">{fileData.name}</span>
-              <!-- Show unsaved changes indicator (*) -->
-              {#if isDirty}
-                  <span class="text-blue-500 ml-1 flex-shrink-0" title="Unsaved changes">*</span>
-              {/if}
-          {:else if isLoading}
-              <!-- Show loading indicator -->
-              <span class="mr-1 flex-shrink-0"><Icon name="loading" class="w-4 h-4 align-text-bottom"/></span> Loading...
-          {:else if !currentFileIdInternal && !error}
-              <!-- Show when no file is selected initially -->
-              No File Selected
-          {:else if error && error.code !== 'EDITOR_IS_FOLDER'}
-               <!-- Show error state -->
-               <span class="mr-1 flex-shrink-0 text-red-500"><Icon name="file" class="w-4 h-4 align-text-bottom"/></span> Error Loading
-          {:else if fileData?.is_folder}
-               <!-- Show folder name when a folder is selected -->
-               <span class="mr-1 flex-shrink-0">
-                <Icon name="folder" class="w-4 h-4 align-text-bottom"/></span> <span class="truncate">{fileData.name}</span>
-          {:else}
-               <!-- Fallback state -->
-               No File Selected
-          {/if}
+          <!-- ... (existing file name/icon/dirty indicator logic) ... -->
+            {#if fileData && !isLoading}
+                <span class="mr-1 flex-shrink-0"><Icon name={fileData.is_folder ? 'folder' : (fileData.name.endsWith('.html') ? 'html5' : (fileData.name.endsWith('.sw') ? 'swalang' : 'file'))} class="w-4 h-4 align-text-bottom" /></span>
+                <span class="truncate">{fileData.name}</span>
+                {#if isDirty}<span class="text-blue-500 ml-1 flex-shrink-0" title="Unsaved changes">*</span>{/if}
+            {:else if isLoading} <span class="mr-1 flex-shrink-0"><Icon name="loading"/></span> Loading...
+            {:else if !currentFileIdInternal && !error} No File Selected
+            {:else if error && error.code !== 'EDITOR_IS_FOLDER'} <span class="mr-1 flex-shrink-0 text-red-500"><Icon name="file"/></span> Error Loading
+            {:else if fileData?.is_folder} <span class="mr-1 flex-shrink-0"><Icon name="folder"/></span> <span class="truncate">{fileData.name}</span>
+            {:else} No File Selected
+            {/if}
       </div>
-      <!-- Save Button -->
-      <button
-        on:click={saveFile}
-        disabled={!isDirty || isSaving || !editorIsReady} 
-        class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
-        title={isDirty ? 'Save changes (Ctrl+S)' : (editorIsReady ? 'No changes to save' : 'Editor not ready')}
-      >
-        {#if isSaving} <Icon name="loading" class="inline-block mr-1 w-4 h-4 align-text-bottom" /> Saving... {:else} Save {/if}
-      </button>
+      <!-- Action Buttons -->
+      <div class="flex items-center space-x-2 flex-shrink-0">
+          <!-- Run Button -->
+           <button
+              on:click={runCode}
+              disabled={isRunningCode || !editorIsReady || fileData?.is_folder}
+              class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              title="Run Code (Simulation)"
+           >
+              {#if isRunningCode} <Icon name="loading" class="w-4 h-4 mr-1"/> {:else} <Icon name="loading" class="w-4 h-4 mr-1"/> {/if} 
+              Run
+          </button>
+           <!-- Save Button -->
+          <button
+              on:click={saveFile}
+              disabled={!isDirty || isSaving || !editorIsReady}
+              class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+              title={isDirty ? 'Save changes (Ctrl+S)' : (editorIsReady ? 'No changes to save' : 'Editor not ready')}
+          >
+              {#if isSaving} <Icon name="loading" class="w-4 h-4 mr-1"/> Saving... {:else} Save {/if}
+          </button>
+           <!-- Toggle Bottom Panel Button -->
+           <button
+              on:click={toggleBottomPanel}
+              class="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+              title={showBottomPanel ? 'Hide Panel' : 'Show Panel'}
+           >
+               {#if showBottomPanel}
+                   <Icon name="chevron-down" class="w-4 h-4"/> 
+               {:else}
+                    <Icon name="chevron-right" class="w-4 h-4"/> 
+               {/if}
+           </button>
+      </div>
     </div>
   
-    <!-- Main Editor Area with Overlays for Different States -->
-    <div class="flex-grow relative min-h-0"> 
+    <!-- Main Content Area (Editor + Collapsible Panel) -->
+    <div class="flex-grow flex flex-col relative min-h-0">
   
-        <!-- Loading Overlay -->
-        {#if isLoading}
-            <div class="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 z-10">
-                <Icon name="loading" class="w-6 h-6 mr-2"/> Loading file...
-            </div>
-        <!-- Error Overlay -->
-        {:else if error}
-             <div class="absolute inset-0 flex items-center justify-center text-red-600 p-4 bg-gray-50 dark:bg-gray-800 z-10">
-                Error: {error.message}
-                {#if error.code !== 'EDITOR_IS_FOLDER' && error.code !== 'EDITOR_FILE_NOT_FOUND'}
-                  <button on:click={() => loadFile(currentFileIdInternal)} class="ml-2 underline">Retry</button>
-                {/if}
-             </div>
-        <!-- Folder Selected Overlay -->
-        {:else if fileData?.is_folder}
-          <div class="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400 p-4 bg-gray-50 dark:bg-gray-800 z-10">
-              Folders cannot be edited. Select a file.
-          </div>
-        <!-- No File Selected Overlay -->
-         {:else if !currentFileIdInternal && !isLoading && !error} 
-             <div class="absolute inset-0 flex items-center justify-center text-gray-500 dark:text-gray-400 p-4 bg-gray-50 dark:bg-gray-800 z-10">
-                 Select a file to begin editing.
-             </div>
-        {/if}
-  
-        <!-- Monaco Editor Container Div -->
-        <!-- This div holds the actual editor. It always exists for `bind:this` -->
-        <!-- We use `invisible` class to hide it visually when overlays are shown, preserving layout -->
-        <div bind:this={editorContainer}
-             class="editor-container w-full h-full"
-             class:invisible={isLoading || error || !currentFileIdInternal || fileData?.is_folder}
-        >
-            <!-- Monaco Editor instance gets created inside this div by the script -->
+        <!-- Editor Container (Takes up remaining space when panel collapsed, shrinks when open) -->
+        <div class="editor-area flex-grow relative" class:flex-shrink={showBottomPanel} style={showBottomPanel ? 'height: 65%;' : 'height: 100%;'}> 
+            {#if isLoading} <div class="overlay-center"><Icon name="loading"/> Loading file...</div>
+            {:else if error} <div class="overlay-center text-red-600">Error: {error.message} {#if error.code !== 'EDITOR_IS_FOLDER'}<button on:click={() => loadFile(currentFileIdInternal)} class="ml-2 underline">Retry</button>{/if}</div>
+            {:else if fileData?.is_folder} <div class="overlay-center text-gray-500">Folders cannot be edited.</div>
+            {:else if !currentFileIdInternal} <div class="overlay-center text-gray-500">Select a file to edit.</div>
+            {/if}
+            <div bind:this={editorContainer} class="editor-container w-full h-full" class:invisible={isLoading || error || !currentFileIdInternal || fileData?.is_folder}></div>
         </div>
-    </div>
-  </div>
+  
+         <!-- Collapsible Bottom Panel (Console/Preview) -->
+         {#if showBottomPanel}
+         <div class="bottom-panel flex flex-col border-t border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex-shrink-0" style="height: 35%;"> 
+             <!-- Panel Tabs -->
+             <div class="flex flex-shrink-0 border-b border-gray-300 dark:border-gray-600 text-xs">
+                 <button
+                      class="px-3 py-1"
+                      class:bg-white={activeTab === 'console'} class:dark:bg-gray-800={activeTab === 'console'}
+                      class:text-blue-600={activeTab === 'console'} class:dark:text-blue-400={activeTab === 'console'} class:font-medium={activeTab === 'console'}
+                      class:text-gray-500={activeTab !== 'console'} class:dark:text-gray-400={activeTab !== 'console'}
+                      class:hover:bg-gray-100={activeTab !== 'console'} class:dark:hover:bg-gray-700={activeTab !== 'console'}
+                      on:click={() => setActiveTab('console')}
+                  >
+                     Console
+                 </button>
+                 <button
+                      class="px-3 py-1"
+                      class:bg-white={activeTab === 'preview'} class:dark:bg-gray-800={activeTab === 'preview'}
+                      class:text-blue-600={activeTab === 'preview'} class:dark:text-blue-400={activeTab === 'preview'} class:font-medium={activeTab === 'preview'}
+                      class:text-gray-500={activeTab !== 'preview'} class:dark:text-gray-400={activeTab !== 'preview'}
+                      class:hover:bg-gray-100={activeTab !== 'preview'} class:dark:hover:bg-gray-700={activeTab !== 'preview'}
+                      on:click={() => setActiveTab('preview')}
+                  >
+                     Preview
+                 </button>
+                  <!-- Console Clear Button -->
+                  {#if activeTab === 'console'}
+                  <button
+                      on:click={clearConsole}
+                      class="ml-auto mr-2 px-2 py-0.5 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
+                      title="Clear Console"
+                  >
+                      Clear
+                  </button>
+                  {/if}
+             </div>
+  
+             <!-- Panel Content Area -->
+             <div class="flex-grow p-2 overflow-auto min-h-0"> 
+                  {#if activeTab === 'console'}
+                      <pre class="console-output whitespace-pre-wrap break-words text-xs font-mono text-gray-800 dark:text-gray-300">
+                          {#each consoleOutput as line, i (i)}
+                              <span>{line}</span><br/>
+                          {/each}
+                          {#if consoleOutput.length === 0}
+                              <span class="text-gray-500 italic">Console output will appear here...</span>
+                          {/if}
+                      </pre>
+                       <!-- TODO: Auto-scroll -->
+                  {:else if activeTab === 'preview'}
+                      <iframe
+                          title="HTML Preview"
+                          sandbox="allow-scripts allow-same-origin"
+                          srcdoc={previewHtml}
+                          class="w-full h-full border-0 bg-white"
+                      ></iframe>
+                  {/if}
+             </div>
+         </div>
+         {/if}
+  
+    </div> 
+  
+  </div> 
   
   <!-- Component Styles -->
   <style>
-    .editor-container {
-      min-height: 100px; /* Ensure container has a minimum size */
-      /* Background color is controlled by the Monaco theme */
+    .editor-container { min-height: 100px; }
+    .editor-container.invisible { visibility: hidden; }
+
+    /* Simple overlay style for loading/error messages */
+    .overlay-center {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: rgba(249, 250, 251, 0.8); /* bg-gray-50/80 */
+         z-index: 10;
+     }
+     :global(html.dark) .overlay-center {
+          background-color: rgba(17, 24, 39, 0.8); /* dark:bg-gray-900/80 */
+     }
+
+    /* Basic console styling */
+    .console-output {
+        /* Add specific styles if needed */
+         word-break: break-all;
     }
-    .editor-container.invisible {
-        visibility: hidden; /* Hides the element but keeps its space in the layout */
-    }
+
+    /* Ensure iframe takes full height */
+    iframe { min-height: 100%; }
   </style>

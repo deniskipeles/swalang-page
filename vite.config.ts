@@ -3,9 +3,16 @@ import tailwindcss from '@tailwindcss/vite';
 import { svelteTesting } from '@testing-library/svelte/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import compression from 'vite-plugin-compression';
 
 export default defineConfig({
 	plugins: [
+		compression({
+			filter: /\.(wasm)$/, // compress WASM
+			ext: '.gz',          // use .gz extension
+			algorithm: 'gzip',
+			deleteOriginFile: false, // keep original .wasm for debugging if needed
+		}),
 		tailwindcss(),
 		sveltekit(),
 		paraglideVitePlugin({
@@ -13,6 +20,9 @@ export default defineConfig({
 			outdir: './src/lib/paraglide'
 		})
 	],
+	build: {
+		assetsInlineLimit: 0 // Prevent Vite from inlining small WASM into JS
+	},
 	test: {
 		workspace: [
 			{

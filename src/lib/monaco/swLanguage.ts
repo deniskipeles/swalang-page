@@ -13,7 +13,7 @@ export const swMonarchLanguage = <monaco.languages.IMonarchLanguage>{
   keywords: [
     'func', 'return', 'let', 'const', 'if', 'else', 'for', 'while',
     'class', 'struct', 'import', 'export', 'true', 'false', 'nil',
-    'ainisha','fafanua','ongeza'
+    'ainisha','fafanua','ongeza', 'kama', 'sivyo','wakati','andika'
     // Add all keywords specific to your .sw language
   ],
 

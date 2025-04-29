@@ -1,8 +1,10 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'; // Use appropriate std version
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 interface RequestPayload {
   prompt: string;
   model?: string; // e.g., 'gemini-pro' or 'gemini-1.5-pro-latest'
+  contextSearchTerm?: string
 }
 
 // No need to define GeminiResponse interface here, as we'll stream raw SSE data
@@ -50,7 +52,69 @@ serve(async (req: Request) => {
       });
     }
 
-    const { prompt, model = 'gemini-1.5-pro-latest', ...rest } = payload; // Default model
+    const { prompt, model = 'gemini-2.0-flash', contextSearchTerm = '' } = payload; // Default model
+
+    // 2. Initialize Supabase Client (Admin)
+    const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', {
+      global: {
+        fetch: fetch
+      } 
+    } // Deno's global fetch
+    );
+
+    const { data: aiContextData, error: rpcError } = await supabase.rpc(
+        'collaborate_swalang_fn_get_ai_context',
+        { p_search_term: contextSearchTerm }
+    );
+
+    if (rpcError) throw new Error("Failed to gather context for AI.");
+
+    console.log("AI Context Data:"); // Pretty print JSON
+
+    // Format context for LLM, accessing data within the new structure
+    let formattedContext = "Relevant Information Context:\n";
+    if(aiContextData.search_term_used) {
+        formattedContext += `(Based on search term: "${aiContextData.search_term_used}")\n\n`;
+    }
+
+    // --- Keywords Section ---
+    if (aiContextData.keywords_section && aiContextData.keywords_section.keywords?.length > 0) {
+        formattedContext += `Section: ${aiContextData.keywords_section.description}\n`; // Use the description from DB
+        aiContextData.keywords_section.keywords.forEach((kw: any) => { // Access the 'keywords' array
+            formattedContext += `- Keyword: ${kw.english_keyword} (${kw.category || 'General'})\n`;
+            formattedContext += `  Desc: ${kw.keyword_description || 'N/A'}\n`;
+            if (kw.top_suggestions?.length > 0) {
+                formattedContext += `  Suggestions:\n`;
+                kw.top_suggestions.forEach((sugg: any) => {
+                    formattedContext += `    * Swahili: ${sugg.swahili_word} (Votes: ${sugg.votes})\n      Desc: ${sugg.description || 'N/A'}\n`;
+                });
+            }
+        });
+        formattedContext += "\n";
+    }
+
+    // --- Documentation Section ---
+    if (aiContextData.documentation_section && aiContextData.documentation_section.documents?.length > 0) {
+        formattedContext += `Section: ${aiContextData.documentation_section.description}\n`; // Use the description from DB
+        aiContextData.documentation_section.documents.forEach((doc: any) => { // Access the 'documents' array
+            formattedContext += `- Doc: ${doc.title} (${doc.category || 'General'})\n  Summary: ${doc.summary || 'N/A'}\n Summary: ${doc.summary || 'N/A'}\n swahili_content: ${doc.swahili_content || 'N/A'}\n english_content: ${doc.english_content || 'N/A'}\n (Slug: ${doc.slug}, Updated: ${doc.updated_at})\n`;
+        });
+        formattedContext += "\n";
+    }
+
+    // --- Final Prompt ---
+    if (formattedContext === "Relevant Information Context:\n" || formattedContext.includes('(Based on search term:')) {
+        formattedContext += "No specific context found in knowledge base for the search term.\n\n";
+    }
+
+    const finalPrompt = `${formattedContext}User Query:\n${prompt}`;
+    console.log("--- Final Prompt for LLM ---");
+    console.log(finalPrompt);
+    console.log("---------------------------");
+
+
+
+
 
     if (!prompt) {
       return new Response(JSON.stringify({ error: 'Missing "prompt" in request body' }), {
@@ -67,7 +131,7 @@ serve(async (req: Request) => {
     const requestBody = {
       contents: [
         {
-          parts: [{ text: prompt }],
+          parts: [{ text: finalPrompt }],
         },
       ],
       // Optional: Add generationConfig, safetySettings etc.
@@ -130,38 +194,3 @@ serve(async (req: Request) => {
 })
 
 console.log(`Function "gemini-handler" (streaming) up and running!`);
-
-
-
-// // Follow this setup guide to integrate the Deno language server with your editor:
-// // https://deno.land/manual/getting_started/setup_your_environment
-// // This enables autocomplete, go to definition, etc.
-
-// // Setup type definitions for built-in Supabase Runtime APIs
-// import "jsr:@supabase/functions-js/edge-runtime.d.ts"
-
-// console.log("Hello from Functions!")
-
-// Deno.serve(async (req) => {
-//   const { name } = await req.json()
-//   const data = {
-//     message: `Hello ${name}!`,
-//   }
-
-//   return new Response(
-//     JSON.stringify(data),
-//     { headers: { "Content-Type": "application/json" } },
-//   )
-// })
-
-/* To invoke locally:
-
-  1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
-  2. Make an HTTP request:
-
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/gemini-ai-stream' \
-    --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' \
-    --header 'Content-Type: application/json' \
-    --data '{"name":"Functions"}'
-
-*/

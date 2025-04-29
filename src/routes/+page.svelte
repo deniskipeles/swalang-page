@@ -22,7 +22,7 @@
 
     <!-- Welcome/Intro Section -->
     <section class="text-center py-8">
-        <h1 class="text-4xl font-bold mb-2 text-gray-800 dark:text-gray-100">Welcome to the Swalang Project & AI Assistant</h1>
+        <h1 class="text-4xl font-bold mb-2 text-gray-800 dark:text-gray-100">Welcome to the Swalang(Swahili based programming Language) Project & AI Assistant</h1>
         <p class="text-lg text-gray-600 dark:text-gray-400">Code, collaborate, explore documentation, news, and events.</p>
          <div class="mt-6 space-x-4">
              <!-- Link to the Editor -->
@@ -30,7 +30,7 @@
                  <Icon name="loading" class="inline-block w-5 h-5 mr-2 align-text-bottom" />
                  Launch AI Editor
              </a>
-             <a href="/swalang" class="button-secondary text-base">Collaborate on Terms</a>
+             <a title="Suggest Keywords That Are Sensible and Recognizable to be used as swahili programming keywords" href="/swalang" class="button-secondary text-base">Collaborate on Terms</a>
          </div>
     </section>
 

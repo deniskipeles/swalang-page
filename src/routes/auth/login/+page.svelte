@@ -49,7 +49,7 @@
     </form>
 
     <!-- Magic Link -->
-    <form method="POST" action="?/magic" class="space-y-2">
+    <!-- <form method="POST" action="?/magic" class="space-y-2">
       <input
         name="email"
         placeholder="Email for magic link"
@@ -61,10 +61,10 @@
       >
         Login with Magic Link
       </button>
-    </form>
+    </form> -->
 
     <!-- Phone OTP -->
-    <form method="POST" action="?/signin_otp" class="space-y-2">
+    <!-- <form method="POST" action="?/signin_otp" class="space-y-2">
       <input
         name="phone"
         placeholder="Phone Number"
@@ -76,7 +76,7 @@
       >
         Login with Phone OTP
       </button>
-    </form>
+    </form> -->
 
     <!-- Anonymous Login -->
     <form method="POST" action="?/anon">
@@ -88,7 +88,7 @@
     </form>
 
     <!-- Password Reset -->
-    <form method="POST" action="?/reset" class="space-y-2">
+    <!-- <form method="POST" action="?/reset" class="space-y-2">
       <input
         name="email"
         placeholder="Email for password reset"
@@ -100,7 +100,7 @@
       >
         Reset Your Password
       </button>
-    </form>
+    </form> -->
 
     <!-- Messages -->
     {#if form?.message}
@@ -111,7 +111,7 @@
     {/if}
 
     <!-- OTP Verification -->
-    {#if form?.verify}
+    <!-- {#if form?.verify}
       <form method="POST" action="?/verify_otp" class="space-y-2">
         <input
           name="otp"
@@ -126,6 +126,6 @@
           Verify OTP
         </button>
       </form>
-    {/if}
+    {/if} -->
   </div>
 </div>

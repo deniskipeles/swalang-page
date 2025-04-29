@@ -51,6 +51,7 @@
     const dispatch = createEventDispatcher<{
       notification: { type: 'success' | 'error'; message: string } | null;
       contentChange: string; // Emits the current editor content
+      filenameChange: string; // Emits the current editor content
     }>();
   
     // --- Core Methods ---
@@ -142,6 +143,7 @@
               originalContent = ''; // Clear content for folder
               dispatchContent();
          } else {
+              dispatch('filenameChange',data.name)
               // Handle selection of a file
               const fileContent = data.content ?? ''; // Use empty string if content is null
               const language = getLanguageFromFilename(data.name);
@@ -652,9 +654,8 @@
              </div>
          </div>
          {/if}
-  
     </div> 
-  
+
   </div> 
   
   <!-- Component Styles -->

@@ -6,6 +6,8 @@
   import AIChat from '$lib/components/AIChat.svelte';
   import Icon from '$lib/components/Icon.svelte'; // Need Icon for buttons
   import { slide } from 'svelte/transition'; // Drawer transition
+	import AiChatSw from '$lib/components/AIChatSW.svelte';
+	import { setModel } from '$lib/stores/chatStore';
 
   export let data: PageData; // Session data
 
@@ -78,6 +80,17 @@
   function handleEditorContentChange(event: CustomEvent<string>) {
       editorContentForAI = event.detail;
   }
+   // Listen to content changes from the editor
+   let filename = 'text'
+  function handleFilenameChange(event: CustomEvent<string>) {
+      filename = event.detail;
+      if (filename.endsWith('.sw')) {
+        setModel('gemini-1.5-flash-latest')
+    } else {
+        setModel('llama3-8b-8192')
+      }
+      console.log('file>>>>>>>>',filename,'<<<<<<<<<<')
+  }
 
 </script>
 
@@ -135,6 +148,7 @@
                 parentData={data}
                 on:notification={handleNotification}
                 on:contentChange={handleEditorContentChange}
+                on:filenameChange={handleFilenameChange}
             />
         </div>
 
@@ -143,11 +157,20 @@
             class="h-full flex-shrink-0 lg:block lg:w-1/4 lg:min-w-[300px] lg:border-l lg:border-gray-300 lg:dark:border-gray-700"
             class:hidden={isSmallScreen} 
          >
-              <AIChat
-                  context={editorContentForAI}
-                  on:notification={handleNotification}
-                  {data}
-              />
+            {#if filename.endsWith('.sw')}
+                <!-- content here -->
+                <AiChatSw
+                    context={editorContentForAI}
+                    on:notification={handleNotification}
+                    {data}
+                />
+            {:else}
+                <AIChat
+                    context={editorContentForAI}
+                    on:notification={handleNotification}
+                    {data}
+                />
+            {/if}
         </div>
 
         <!-- == Mobile Drawers / Modals == -->
@@ -196,7 +219,20 @@
                      </div>
                     <!-- AI Chat Component -->
                      <div class="flex-grow overflow-y-auto min-h-0">
-                         <AIChat {data} context={editorContentForAI} on:notification={handleNotification} />
+                        {#if filename.endsWith('.sw')}
+                            <!-- content here -->
+                            <AiChatSw
+                                context={editorContentForAI}
+                                on:notification={handleNotification}
+                                {data}
+                            />
+                        {:else}
+                            <AIChat
+                                context={editorContentForAI}
+                                on:notification={handleNotification}
+                                {data}
+                            />
+                        {/if}
                      </div>
                  </div>
              {/if}

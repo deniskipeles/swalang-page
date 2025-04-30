@@ -12,6 +12,7 @@
   
     import type { PageData } from '../../routes/app/$types';
     import { getWasmExports, loadWasm } from '$lib/utils/wasm';
+    import { loadSwalangWasm, getWasmSwalangExports } from "$lib/utils/wasm";
     import { renderMarkdown } from '$lib/utils/renderMarkdown';
     export let parentData:PageData
     // --- Monaco Editor Setup ---
@@ -422,12 +423,12 @@
         consoleOutput = [];
     }
 
-    // let code = "";
-	  let output = "";
     let wasm 
     onMount(async () => {
-      await loadWasm();
-      wasm = getWasmExports();
+        await loadSwalangWasm();
+		wasm = getWasmSwalangExports();
+        await loadWasm();
+        wasm = getWasmExports();
     });
 
     /** Simulates running the code in the editor */
@@ -463,9 +464,9 @@
             } else if (language === 'html') {
                 logToConsole("HTML file detected. Use 'Preview' tab to view.", 'info');
             } else if (language === 'swalang') {
-                logToConsole(`Swalang code detected (length: ${code.length}). Execution simulation...`);
-                logToConsole("Mfumo: Mipangilio imekamilika."); // System: Setup complete.
-                logToConsole("Matokeo: Hello Swalang!"); // Output: Hello Swalang!
+                // logToConsole(`Swalang code detected (length: ${code.length}). Execution simulation...`);
+                // logToConsole("Mfumo: Mipangilio imekamilika."); // System: Setup complete.
+                logToConsole(window.runSwalang(code, fileData?.name)); // Output: Hello Swalang!
             }
             else {
                 logToConsole(`Execution simulation finished for ${language}.`);

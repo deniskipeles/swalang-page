@@ -327,7 +327,7 @@
               }
             } else if (value) {
                 // Log unexpected non-string or empty values from the stream
-                console.log("Received non-string or empty value from stream:", value);
+                console.log("Received non-string or empty value from stream:", 'value');
             }
        } // end while loop for stream reading
 

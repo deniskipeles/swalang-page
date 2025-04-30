@@ -27,7 +27,7 @@
          <div class="mt-6 space-x-4">
              <!-- Link to the Editor -->
              <a href="/app" class="button-primary text-base">
-                 <Icon name="loading" class="inline-block w-5 h-5 mr-2 align-text-bottom" />
+                 <!-- <Icon name="loading" class="inline-block w-5 h-5 mr-2 align-text-bottom" /> -->
                  Launch AI Editor
              </a>
              <a title="Suggest Keywords That Are Sensible and Recognizable to be used as swahili programming keywords" href="/swalang" class="button-secondary text-base">Collaborate on Terms</a>

@@ -1,27 +1,27 @@
 <script>
 	import { onMount } from "svelte";
-	import { loadWasm, getWasmExports } from "$lib/utils/wasm.js";
+	import { loadSwalangWasm, getWasmSwalangExports } from "$lib/utils/wasm.js";
 
 	let code = "";
 	$: output = "";
 
 	let wasm 
 	onMount(async () => {
-		await loadWasm();
-		wasm = getWasmExports();
+		await loadSwalangWasm();
+		wasm = getWasmSwalangExports();
 
 		// Example usage
 		// const result = wasm.multiply(6, 7);
 		// console.log("Result:", result);
 		// output = `multiply(6, 7) = ${result}`;
 	});
-	function runCode1() {
-		output = window.runPylearn(code, "main.py");
+	function runCode() {
+		output = window.runSwalang(code, "main.py");
 	}
-	async function runCode(){
-        let pyodide = await window.loadPyodide();
-        output = pyodide.runPython(code);
-      }
+	// async function runCode(){
+    //     let pyodide = await window.loadPyodide();
+    //     output = pyodide.runPython(code);
+    //   }
 </script>
 <svelte:head>
 	<script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>

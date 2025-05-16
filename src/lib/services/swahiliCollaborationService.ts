@@ -143,6 +143,53 @@ export async function createCategory(
     }
 }
 
+export async function updateCategory(
+    client: SupabaseClient<Database> = globalSupabaseClient,
+    categoryId: string,
+    updates: { name?: string; description?: string | null }
+): Promise<{ data?: Category, error?: CollaborateError }> {
+    const inputSchema = z.object({
+        name: z.string().trim().min(1).max(100).optional(),
+        description: z.string().trim().max(500).optional().nullable(),
+    }).refine(data => Object.keys(data).length > 0, { message: "No changes provided."});
+
+    const definedUpdates = Object.fromEntries(Object.entries(updates).filter(([_, v]) => v !== undefined));
+    const validation = inputSchema.safeParse(definedUpdates);
+    if (!validation.success) {
+        return { error: formatCollabError("Invalid input for updating category.", validation.error) };
+    }
+    if (Object.keys(validation.data).length === 0) { // Should be caught by refine, but good check
+         return { error: formatCollabError("No changes to save.", null, 'NO_CHANGES') };
+    }
+
+    try {
+        // RLS policy "collaborate_swalang_categories_update_creator" will handle permissions
+        const { data, error: dbError } = await client
+            .from('collaborate_swalang_categories')
+            .update(validation.data) // updated_at is handled by trigger
+            .eq('id', categoryId)
+            .select()
+            .single(); // Use single to ensure it updated a row
+
+        if (dbError) {
+            if (dbError.code === '23505') { // Unique name violation
+                return { error: formatCollabError(`Category name "${validation.data.name}" already exists.`, dbError, 'DB_UNIQUE_VIOLATION') };
+            }
+            return { error: formatCollabError(`Failed to update category '${categoryId}'.`, dbError) };
+        }
+        if (!data) { // RLS might have prevented update or category not found
+             return { error: formatCollabError(`Category '${categoryId}' not found or update not permitted.`, null, 'NOT_FOUND_OR_DENIED') };
+        }
+
+        const responseValidation = categorySchema.safeParse(data);
+        if(!responseValidation.success) { /* ... handle ... */ }
+        return { data: responseValidation.data };
+
+    } catch (e) {
+        return { error: formatCollabError(`Unexpected error updating category '${categoryId}'.`, e as Error) };
+    }
+}
+
 
 // --- Types & Schemas (assuming Category is already defined) ---
 // type KeywordRow = Database['public']['Tables']['collaborate_swalang_keywords']['Row'];
@@ -297,6 +344,53 @@ export async function createKeyword(
     }
 }
 
+export async function updateKeyword(
+    client: SupabaseClient<Database> = globalSupabaseClient,
+    keywordId: string,
+    updates: { english_keyword?: string; description?: string | null } // Category_id typically not changed via edit
+): Promise<{ data?: Keyword, error?: CollaborateError }> {
+    const inputSchema = z.object({
+        english_keyword: z.string().trim().min(1).max(150).optional(),
+        description: z.string().trim().max(1000).optional().nullable(),
+    }).refine(data => Object.keys(data).length > 0, { message: "No changes provided."});
+
+    const definedUpdates = Object.fromEntries(Object.entries(updates).filter(([_, v]) => v !== undefined));
+    const validation = inputSchema.safeParse(definedUpdates);
+    if (!validation.success) {
+        return { error: formatCollabError("Invalid input for updating keyword.", validation.error) };
+    }
+    if (Object.keys(validation.data).length === 0) {
+         return { error: formatCollabError("No changes to save.", null, 'NO_CHANGES') };
+    }
+
+    try {
+        // RLS policy "collaborate_swalang_keywords_update_creator" will handle permissions
+        const { data, error: dbError } = await client
+            .from('collaborate_swalang_keywords')
+            .update(validation.data) // updated_at handled by trigger
+            .eq('id', keywordId)
+            .select()
+            .single();
+
+        if (dbError) {
+            if (dbError.code === '23505') { // Unique name violation
+                return { error: formatCollabError(`Keyword "${validation.data.english_keyword}" already exists.`, dbError, 'DB_UNIQUE_VIOLATION') };
+            }
+            return { error: formatCollabError(`Failed to update keyword '${keywordId}'.`, dbError) };
+        }
+        if (!data) { // RLS might have prevented update or keyword not found
+             return { error: formatCollabError(`Keyword '${keywordId}' not found or update not permitted.`, null, 'NOT_FOUND_OR_DENIED') };
+        }
+
+        const responseValidation = keywordSchema.safeParse(data);
+        if(!responseValidation.success) { /* handle */ }
+        return { data: responseValidation.data };
+
+    } catch (e) {
+        return { error: formatCollabError(`Unexpected error updating keyword '${keywordId}'.`, e as Error) };
+    }
+}
+
 
 // Include calculated votes and potentially user's vote in the suggestion type for the UI
 export const suggestionSchema = z.object({
@@ -314,7 +408,7 @@ export const suggestionSchema = z.object({
     votes: z.number().int().default(0), // Calculated vote score
     user_vote: z.number().int().nullable().default(null), // User's current vote (-1, 1, or null)
 });
-// export type SuggestionWithVotes = z.infer<typeof suggestionSchema>;
+export type SuggestionRow = z.infer<typeof suggestionSchema>;
 
 // --- Service Functions ---
 // ... (listCategories, createCategory, getCategoryById, listKeywordsByCategory, createKeyword - remain the same) ...
@@ -578,6 +672,49 @@ export async function createSuggestion(
     }
 }
 
+export async function updateSuggestion(
+    client: SupabaseClient<Database> = globalSupabaseClient,
+    suggestionId: string,
+    updates: { swahili_word?: string; description?: string | null }
+): Promise<{ data?: SuggestionRow, error?: CollaborateError }> { // Return basic SuggestionRow
+    const inputSchema = z.object({
+        swahili_word: z.string().trim().min(1).max(200).optional(),
+        description: z.string().trim().max(1500).optional().nullable(),
+    }).refine(data => Object.keys(data).length > 0, { message: "No changes provided."});
+
+    const definedUpdates = Object.fromEntries(Object.entries(updates).filter(([_, v]) => v !== undefined));
+    const validation = inputSchema.safeParse(definedUpdates);
+    if (!validation.success) {
+        return { error: formatCollabError("Invalid input for updating suggestion.", validation.error) };
+    }
+    if (Object.keys(validation.data).length === 0) {
+         return { error: formatCollabError("No changes to save.", null, 'NO_CHANGES') };
+    }
+
+    try {
+        // RLS policy "collaborate_swalang_suggestions_update_own_unapproved" will handle permissions
+        const { data, error: dbError } = await client
+            .from('collaborate_swalang_suggestions')
+            .update(validation.data) // Assuming no 'updated_at' on suggestions, or add trigger
+            .eq('id', suggestionId)
+            .select()
+            .single();
+
+        if (dbError) {
+            return { error: formatCollabError(`Failed to update suggestion '${suggestionId}'.`, dbError) };
+        }
+        if (!data) { // RLS might have prevented update or suggestion not found/approved
+             return { error: formatCollabError(`Suggestion '${suggestionId}' not found, already approved, or update not permitted.`, null, 'NOT_FOUND_OR_DENIED') };
+        }
+
+        // No complex Zod validation here, return raw row
+        return { data };
+
+    } catch (e) {
+        return { error: formatCollabError(`Unexpected error updating suggestion '${suggestionId}'.`, e as Error) };
+    }
+}
+
 /**
  * Upserts (inserts or updates) a user's vote on a suggestion.
  */
@@ -695,11 +832,109 @@ export async function getSuggestionById(
      return { error: formatCollabError('Unexpected error.', null) }; // Default
 }
 
-// --- Add functions for keywords, suggestions, votes later ---
-// async function getCategoryById(client, id)...
-// async function listKeywordsByCategory(client, categoryId)...
-// async function createKeyword(client, details)...
-// async function listSuggestionsByKeyword(client, keywordId)...
-// async function createSuggestion(client, details)...
-// async function addVote(client, suggestionId, voteValue)...
-// async function getUserVote(client, suggestionId)...
+
+
+
+// We need to ensure listKeywordsByCategory and listSuggestionsByKeyword accept offset & limit
+// and can fetch *publicly viewable* ones for the layout menu (RLS should handle this if client is unauth/anon).
+
+/**
+ * Lists keywords belonging to a specific category with pagination.
+ * Fetches data accessible by the provided client (respects RLS).
+ */
+export async function listKeywordsByCategoryIdPaginated(
+    client: SupabaseClient<Database> = globalSupabaseClient,
+    categoryId: string,
+    limit: number = 50,
+    offset: number = 0
+): Promise<{ data?: Pick<Keyword, 'id' | 'english_keyword'>[], error?: CollaborateError, count?: number }> {
+     if (!categoryId) {
+        return { error: formatCollabError("Category ID is required.", null, 'INVALID_INPUT') };
+    }
+    try {
+        // Get total count for pagination info
+        const { count, error: countError } = await client
+            .from('collaborate_swalang_keywords')
+            .select('*', { count: 'exact', head: true })
+            .eq('category_id', categoryId);
+
+        if (countError) {
+            console.warn("Failed to get keyword count for category", categoryId, countError);
+            // Proceed without count if it fails
+        }
+
+        const { data, error: dbError } = await client
+            .from('collaborate_swalang_keywords')
+            .select('id, english_keyword') // Only fetch what's needed for the menu
+            .eq('category_id', categoryId)
+            .order('english_keyword', { ascending: true })
+            .range(offset, offset + limit - 1);
+
+        if (dbError) {
+            return { error: formatCollabError(`Failed to list keywords for category ${categoryId}.`, dbError) };
+        }
+
+        // Basic validation
+        const listSchema = z.array(z.object({ id: z.string().uuid(), english_keyword: z.string() }));
+        const validation = listSchema.safeParse(data);
+         if (!validation.success) {
+            console.warn("Paginated keyword list validation failed", validation.error);
+            return { data: data as any[], count };
+        }
+
+        return { data: validation.data, count: count ?? undefined };
+
+    } catch (e) {
+        return { error: formatCollabError(`An unexpected error occurred listing keywords for category ${categoryId}.`, e as Error) };
+    }
+}
+
+/**
+ * Lists APPROVED suggestions for a keyword with pagination.
+ * Fetches data accessible by the provided client (respects RLS).
+ */
+export async function listApprovedSuggestionsByKeywordIdPaginated(
+    client: SupabaseClient<Database> = globalSupabaseClient,
+    keywordId: string,
+    limit: number = 50,
+    offset: number = 0
+): Promise<{ data?: Pick<SuggestionRow, 'id' | 'swahili_word'>[], error?: CollaborateError, count?: number }> {
+     if (!keywordId) {
+        return { error: formatCollabError("Keyword ID is required.", null, 'INVALID_INPUT') };
+    }
+    try {
+        const { count, error: countError } = await client
+            .from('collaborate_swalang_suggestions')
+            .select('*', { count: 'exact', head: true })
+            .eq('keyword_id', keywordId)
+            .eq('is_approved', true); // Only approved
+
+        if (countError) { console.warn("Failed to get suggestion count for keyword", keywordId, countError); }
+
+        const { data, error: dbError } = await client
+            .from('collaborate_swalang_suggestions')
+            .select('id, swahili_word') // Minimal fields for menu
+            .eq('keyword_id', keywordId)
+            .eq('is_approved', true) // Only approved suggestions
+            // Order by votes (requires join or RPC) or creation date. For menu, created_at is simpler.
+            // .order('total_votes', { ascending: false }) // If using the view or join
+            .order('created_at', { ascending: true })
+            .range(offset, offset + limit - 1);
+
+        if (dbError) {
+            return { error: formatCollabError(`Failed to list suggestions for keyword ${keywordId}.`, dbError) };
+        }
+
+        const listSchema = z.array(z.object({ id: z.string().uuid(), swahili_word: z.string() }));
+        const validation = listSchema.safeParse(data);
+         if (!validation.success) {
+            console.warn("Paginated suggestion list validation failed", validation.error);
+            return { data: data as any[], count };
+        }
+
+        return { data: validation.data, count: count ?? undefined };
+
+    } catch (e) {
+        return { error: formatCollabError(`An unexpected error occurred listing suggestions for keyword ${keywordId}.`, e as Error) };
+    }
+}

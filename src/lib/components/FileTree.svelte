@@ -6,6 +6,8 @@
   import Icon from './Icon.svelte';
   import type { PageData } from '../../routes/app/$types';
   export let data:PageData
+  export let isSharedView = false
+  export let sharedChildren = []
 
   // --- Props ---
   export let selectedFileId: string | null = null; // Allow two-way binding
@@ -154,6 +156,8 @@
         <TreeNode
           {data}
           {node}
+          {isSharedView}
+          {sharedChildren}
           level={0}
           bind:selectedFileId
           on:select={handleSelect}

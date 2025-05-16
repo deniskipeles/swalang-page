@@ -4,11 +4,15 @@
   import type { FileNode, VfsError } from '$lib/services/fileSystemService';
   import Icon from './Icon.svelte';
   import type { PageData } from '../../routes/app/$types';
+	import { goto } from '$app/navigation';
+	import ShareButton from './ShareButton.svelte';
   export let data:PageData
 
   export let node: FileNode;
   export let level = 0;
   export let selectedFileId: string | null = null;
+  export let isSharedView = false; // <<< New Prop
+  export let sharedChildren: FileNode[] | undefined = undefined; // <<< Pass pre-loaded children for shared view
 
   // --- State ---
   let isExpanded = false;
@@ -28,21 +32,27 @@
   const storeValue = vfsStore;
 
   // --- Derived State from Store ---
-  $: children = $storeValue.nodesByParentId[node.id] || [];
-  $: isLoadingChildren = $storeValue.loading[node.id] ?? false;
-  $: childrenError = $storeValue.errors[node.id] ?? null;
+  // $: children = $storeValue.nodesByParentId[node.id] || [];
+  // $: isLoadingChildren = $storeValue.loading[node.id] ?? false;
+  // Use sharedChildren if provided, otherwise check store (only if not shared view)
+  $: children = isSharedView ? (sharedChildren || []) : ($storeValue.nodesByParentId[node.id] || []);
+  $: isLoadingChildren = isSharedView ? false : ($storeValue.loading[node.id] ?? false); // Loading only relevant for store-based loading
+  // $: childrenError = $storeValue.errors[node.id] ?? null;
+  $: childrenError = isSharedView ? null : ($storeValue.errors[node.id] ?? null);
   $: isPerformingNodeAction = $storeValue.isPerformingAction; // Global flag
 
   // --- Computed ---
   $: isSelected = !node.is_folder && node.id === selectedFileId;
-  $: hasLoadedChildren = node.id in $storeValue.nodesByParentId; // Check if key exists
+  // $: hasLoadedChildren = node.id in $storeValue.nodesByParentId; // Check if key exists
+  $: hasLoadedChildren = isSharedView ? (sharedChildren !== undefined) : (node.id in $storeValue.nodesByParentId);
 
   // --- Methods ---
   async function loadChildren() {
-    if (!node.is_folder) return;
+    if (!node.is_folder || isSharedView) return; // <<< Don't load via store in shared view
     // Use store action to load children
     vfsStore.loadNodes(data.supabase,node.id);
   }
+  
 
   async function toggleExpand() {
     if (!node.is_folder) return;
@@ -53,6 +63,9 @@
   }
 
   function handleClick() {
+    if (isSharedView) {
+      goto(`/share/${data?.shareToken}/${node.id}`)
+    }
     if (node.is_folder) {
       toggleExpand();
       dispatch('select', null); // Deselect any file when clicking folder
@@ -104,6 +117,7 @@
     }
 
   function requestDelete() {
+      if (isSharedView) return; // <<< Disable delete in shared view
       if (confirm(`Are you sure you want to delete "${node.name}"? ${node.is_folder ? '(This will delete all its contents!)' : ''}`)) {
           // Dispatch event with necessary info for FileTree to call store action
           dispatch('delete', { nodeId: node.id, parentId: node.parent_id, nodeName: node.name });
@@ -111,8 +125,9 @@
   }
 
   function requestCreate(isFolder: boolean) {
-       // Dispatch event for FileTree to handle creation via store
-       dispatch('create', { parentId: node.id, isFolder });
+      if (isSharedView) return; // <<< Disable create in shared view
+      // Dispatch event for FileTree to handle creation via store
+      dispatch('create', { parentId: node.id, isFolder });
   }
 
   // Helper to bubble notification up (optional, FileTree handles most)
@@ -173,6 +188,7 @@
         {/if}
         <button title="Rename" on:click|stopPropagation={startRename} disabled={isPerformingNodeAction} class="p-0.5 hover:text-green-600 disabled:opacity-50"><Icon name="edit" /></button>
         <button title="Delete" on:click|stopPropagation={requestDelete} disabled={isPerformingNodeAction} class="p-0.5 hover:text-red-600 disabled:opacity-50"><Icon name="trash" /></button>
+        <ShareButton parentData={data} fileData={node}/>
      </span>
      {/if}
   </div>
@@ -191,6 +207,7 @@
       {#each children as childNode (childNode.id)}
         <svelte:self
             {data}
+            {isSharedView}
             node={childNode}
             level={level + 1}
             bind:selectedFileId

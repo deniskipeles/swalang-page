@@ -14,7 +14,9 @@
     import { getWasmExports, loadWasm } from '$lib/utils/wasm';
     import { loadSwalangWasm, getWasmSwalangExports } from "$lib/utils/wasm";
     import { renderMarkdown } from '$lib/utils/renderMarkdown';
+    import ShareButton from '$lib/components/ShareButton.svelte';
     export let parentData:PageData
+    export let isSharedView = false; // <<< New Prop
     // --- Monaco Editor Setup ---
     // Type definition for the Monaco library (will be populated by dynamic import)
     let monaco: typeof import('monaco-editor');
@@ -555,7 +557,7 @@
               class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
               title="Run Code (Simulation)"
            >
-              {#if isRunningCode} <Icon name="loading" class="w-4 h-4 mr-1"/> {:else} <Icon name="loading" class="w-4 h-4 mr-1"/> {/if} 
+              {#if isRunningCode} <Icon name="loading" class="w-4 h-4 mr-1"/> {/if} 
               Run
           </button>
            <!-- Save Button -->
@@ -567,6 +569,8 @@
           >
               {#if isSaving} <Icon name="loading" class="w-4 h-4 mr-1"/> Saving... {:else} Save {/if}
           </button>
+           <!-- Share Button -->
+          <ShareButton {parentData} {fileData}/>
            <!-- Toggle Bottom Panel Button -->
            <button
               on:click={toggleBottomPanel}

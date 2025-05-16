@@ -1,7 +1,9 @@
 import { supabase } from '$lib/supabaseClient';
 import { z } from 'zod';
+import { customAlphabet } from 'nanoid'; // For generating URL-safe tokens
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '$lib/types/database.types'; // Import generated types
+import { supabase as globalSupabaseClient } from '$lib/supabaseClient';
 
 // Generate DB types (run this command after setting up supabase CLI and linking)
 // npx supabase gen types typescript --project-id YOUR_PROJECT_REF --schema public > src/lib/database.types.ts
@@ -349,94 +351,181 @@ export async function getFilePath(
     }
 }
 
-// --- Database Function for getFilePath ---
-/* Add this function to your Supabase SQL editor or a new migration:
-
-CREATE OR REPLACE FUNCTION public.get_file_path(target_file_id UUID)
-RETURNS TEXT
-LANGUAGE sql
-STABLE -- Indicates the function cannot modify the database
-SECURITY DEFINER -- Necessary to potentially bypass RLS during path traversal if needed, ensure logic is safe
-AS $$
-  WITH RECURSIVE file_path AS (
-    -- Base case: the starting file/folder
-    SELECT id, parent_id, name
-    FROM public.files
-    WHERE id = target_file_id
-      -- Ensure the requesting user owns the target file (apply RLS check here)
-      AND auth.uid() = user_id
-
-    UNION ALL
-
-    -- Recursive step: join with parent
-    SELECT f.id, f.parent_id, f.name
-    FROM public.files f
-    JOIN file_path fp ON f.id = fp.parent_id
-      -- RLS is implicitly handled by the base case, no need to re-check auth.uid() here
-      -- unless you want to ensure ownership of all parent folders (might be too restrictive)
-  )
-  -- Aggregate the names into a path string
-  SELECT '/' || string_agg(name, '/' ORDER BY file_path.id = target_file_id DESC, file_path.parent_id NULLS FIRST)
-  FROM file_path;
-$$;
-
--- Note: The ORDER BY in string_agg might need adjustment depending on how you want the path constructed.
--- This version attempts to put the target file's name last. Building the path correctly often involves
--- reversing the order collected from the CTE. A plpgsql version might offer more control.
-
--- Simpler plpgsql version (often easier to reason about path construction):
-CREATE OR REPLACE FUNCTION public.get_file_path(target_file_id UUID)
-RETURNS TEXT
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER -- Check implications carefully
-AS $$
-DECLARE
-    result_path TEXT := '';
-    current_name TEXT;
-    current_parent_id UUID := target_file_id;
-    current_user_id UUID;
-    requesting_user_id UUID := auth.uid();
-BEGIN
-    -- Check if the target file exists and belongs to the user first
-    SELECT user_id INTO current_user_id FROM public.files WHERE id = target_file_id;
-    IF NOT FOUND OR current_user_id != requesting_user_id THEN
-       RETURN NULL; -- Or raise an exception 'Permission denied or file not found'
-    END IF;
-
-    LOOP
-        SELECT name, parent_id
-        INTO current_name, current_parent_id
-        FROM public.files
-        WHERE id = current_parent_id;
-
-        IF NOT FOUND THEN
-            EXIT; -- Should not happen if starting from a valid ID, but safety check
-        END IF;
-
-        result_path := '/' || current_name || result_path;
-
-        IF current_parent_id IS NULL THEN
-            EXIT; -- Reached the root
-        END IF;
-
-         -- Optional: Check if user owns parent? Generally not needed if initial check is done.
-         -- SELECT user_id INTO current_user_id FROM public.files WHERE id = current_parent_id;
-         -- IF current_user_id != requesting_user_id THEN RAISE EXCEPTION 'Access denied to parent folder'; END IF;
-
-    END LOOP;
-
-    -- Handle root case (if path is empty, means it was a root file)
-    IF result_path = '' THEN
-        SELECT '/' || name INTO result_path FROM public.files WHERE id = target_file_id;
-    END IF;
 
 
-    RETURN result_path;
-END;
-$$;
+// --- Types for Shares ---
+export const fileShareSchema = z.object({
+    id: z.string().uuid(),
+    file_id: z.string().uuid(),
+    user_id: z.string().uuid(),
+    share_token: z.string(),
+    is_active: z.boolean(),
+    expires_at: z.coerce.date().nullable(),
+    created_at: z.coerce.date(),
+});
+export type FileShare = z.infer<typeof fileShareSchema>;
 
--- Grant execution permission to authenticated users
-GRANT EXECUTE ON FUNCTION public.get_file_path(UUID) TO authenticated;
+// nanoid for generating URL-friendly random strings
+const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 24); // 24 chars long
 
-*/
+// --- Existing Service Functions ---
+// ... (listFiles, createFile, getFile, updateFile, deleteFile, getFilePath) ...
+
+// --- Share Link Functions ---
+
+/**
+ * Creates a share link for a file/folder.
+ * If a share already exists for this file, it can either error or update it (e.g., reactivate).
+ * This example creates a new one or errors if unique constraint `file_shares_file_id_unique` is active.
+ */
+export async function createFileShare(
+    client: SupabaseClient<Database>, // Authenticated client of the file owner
+    fileId: string,
+    expiresAt?: Date | null // Optional expiry
+): Promise<{ data?: FileShare, error?: VfsError }> {
+    try {
+        const { data: { user }, error: userError } = await client.auth.getUser();
+        if (userError || !user) {
+            return { error: formatError("User not authenticated.", null, 'AUTH_REQUIRED') };
+        }
+
+        const shareToken = nanoid(); // Generate a unique share token
+
+        const { data, error: dbError } = await client
+            .from('file_shares')
+            .insert({
+                file_id: fileId,
+                user_id: user.id, // Owner of the share is the current user
+                share_token: shareToken,
+                is_active: true,
+                expires_at: expiresAt ? expiresAt.toISOString() : null
+            })
+            .select()
+            .single();
+
+        if (dbError) {
+             // Handle unique constraint violation on file_id if you only allow one share per file
+             if (dbError.code === '23505' && dbError.message.includes('file_shares_file_id_unique')) {
+                //  return { error: formatError("A share link already exists for this file. Manage existing link.", dbError, 'SHARE_EXISTS')};
+                 console.warn("A share link already exists for this file. Manage existing link.", dbError, 'SHARE_EXISTS');
+             }
+             // get the existing data
+             const { data: existingData, error: existingError } = await client.from('file_shares').select().eq('file_id', fileId).maybeSingle();
+             console.log(existingError,existingData)
+             const validation_existingData = fileShareSchema.safeParse(existingData);
+             if (validation_existingData) {
+                return { data: validation_existingData.data };
+             }
+            return { error: formatError("Failed to create share link.", dbError) };
+        }
+        const validation = fileShareSchema.safeParse(data);
+        if(!validation.success) return { error: formatError("Invalid share data from DB.", validation.error, 'INVALID_RESPONSE')};
+        return { data: validation.data };
+
+    } catch (e) {
+        return { error: formatError("An unexpected error occurred creating share link.", e as Error) };
+    }
+}
+
+/**
+ * Retrieves a share link record by its token.
+ * This is used internally or by share management UI, not for public access directly.
+ */
+export async function getShareByToken(
+    client: SupabaseClient<Database>, // Can be unauthenticated if RLS allows
+    shareToken: string
+): Promise<{ data?: FileShare, error?: VfsError }> {
+    try {
+        const { data, error: dbError } = await client
+            .from('file_shares')
+            .select('*')
+            .eq('share_token', shareToken)
+            .eq('is_active', true) // Only get active shares
+            // Optionally add: .gt('expires_at', new Date().toISOString()) if not handled by RLS already
+            .maybeSingle();
+
+        if (dbError) return { error: formatError("Failed to get share link by token.", dbError) };
+        if (!data) return { error: formatError("Share link not found, inactive, or expired.", null, 'NOT_FOUND') };
+
+        const validation = fileShareSchema.safeParse(data);
+        if(!validation.success) return { error: formatError("Invalid share data from DB.", validation.error, 'INVALID_RESPONSE')};
+        return { data: validation.data };
+    } catch (e) { return { error: formatError("Error getting share by token.", e as Error) }; }
+}
+
+/**
+ * Fetches a publicly shared file/folder and its children (if folder) using a share token.
+ * This uses the global unauthenticated client by default for the actual file access,
+ * relying on the modified RLS on `public.files`.
+ */
+export async function getSharedFileOrFolderByToken(
+    shareToken: string,
+    // For listing children of a shared folder, parentId within the shared context
+    sharedContextParentId: string | null = null
+): Promise<{
+    shareInfo?: FileShare; // Info about the share link itself
+    fileNode?: FileNode;   // The root shared file/folder
+    children?: FileNode[]; // Children if it's a folder and we are listing them
+    error?: VfsError;
+}> {
+    // 1. Validate the share token and get share + root file_id
+    const { data: shareInfo, error: shareError } = await getShareByToken(globalSupabaseClient, shareToken);
+    if (shareError || !shareInfo) {
+        return { error: shareError || formatError("Invalid or expired share link.", null, 'SHARE_INVALID') };
+    }
+
+    // 2. Get the root shared file/folder info
+    // This query will pass because of the RLS policy on `files` checking `is_file_publicly_shared_or_descendant`
+    const { data: rootFileNode, error: rootFileError } = await getFile(globalSupabaseClient,shareInfo.file_id); // Uses globalSupabaseClient, RLS applies
+    if (rootFileError || !rootFileNode) {
+        return { shareInfo, error: rootFileError || formatError("Shared file not found.", null, 'NOT_FOUND') };
+    }
+
+    // 3. If it's a folder and we are listing its children within the shared context
+    let children: FileNode[] | undefined;
+    let childrenError: VfsError | undefined;
+
+    // The 'sharedContextParentId' determines what level we are listing.
+    // If null, we list children of the root shared folder.
+    // If not null, it's an ID of a subfolder *within* the shared structure.
+    const parentToList = sharedContextParentId === null ? (rootFileNode.is_folder ? rootFileNode.id : null) : sharedContextParentId;
+
+    if (parentToList) {
+        // RLS policy on `files` should allow this if parentToList is a descendant of a shared item.
+        const { data: childNodes, error: listError } = await listFiles(
+            globalSupabaseClient, // Use unauthenticated client for public access
+            parentToList
+        );
+        children = childNodes;
+        childrenError = listError as VfsError; // Cast for type consistency
+    }
+
+    if(childrenError) {
+        console.warn("Error listing children of shared folder:", childrenError);
+        // Decide if this is a critical error for the whole page
+    }
+    // console.log(children?.length,children?.[0]?.name)
+
+    return { shareInfo, fileNode: rootFileNode, children, error: childrenError };
+}
+
+
+/**
+ * Deactivates a share link (or deletes the record).
+ */
+export async function deactivateShare(
+    client: SupabaseClient<Database>, // Authenticated client of the share owner
+    shareId: string // The ID of the file_shares record
+): Promise<{ error?: VfsError }> {
+    try {
+        // RLS on file_shares ensures only owner can do this
+        const { error: dbError } = await client
+            .from('file_shares')
+            .update({ is_active: false, expires_at: new Date().toISOString() }) // Or .delete()
+            .eq('id', shareId);
+            // .eq('user_id', user.id); // Redundant if RLS is correct
+
+        if (dbError) return { error: formatError("Failed to deactivate share.", dbError) };
+        return {};
+    } catch (e) { return { error: formatError("Error deactivating share.", e as Error) }; }
+}

@@ -4,6 +4,13 @@ import type { PageServerLoad, Actions } from './$types';
 import { z } from 'zod';
 import { ZodError } from 'zod';
 import { listCategories, createCategory } from '$lib/services/swahiliCollaborationService'; // Import service functions
+import { updateCategory } from '$lib/services/swahiliCollaborationService'; // Add import
+
+const updateCategorySchema = z.object({
+    id: z.string().uuid("Invalid category ID."),
+    name: z.string().trim().min(1, "Category name cannot be empty.").max(100),
+    description: z.string().trim().max(500).optional(),
+});
 
 // Define Zod schema for form validation
 const createCategorySchema = z.object({

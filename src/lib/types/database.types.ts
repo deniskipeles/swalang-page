@@ -1,4 +1,5 @@
 
+
 export type Json =
   | string
   | number
@@ -282,6 +283,44 @@ export type Database = {
         }
         Relationships: []
       }
+      file_shares: {
+        Row: {
+          created_at: string
+          expires_at: string | null
+          file_id: string
+          id: string
+          is_active: boolean
+          share_token: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string | null
+          file_id: string
+          id?: string
+          is_active?: boolean
+          share_token: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string | null
+          file_id?: string
+          id?: string
+          is_active?: boolean
+          share_token?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "file_shares_file_id_fkey"
+            columns: ["file_id"]
+            isOneToOne: true
+            referencedRelation: "files"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       files: {
         Row: {
           content: string | null
@@ -424,6 +463,15 @@ export type Database = {
       }
     }
     Functions: {
+      collaborate_swalang_fn_get_ai_context: {
+        Args: {
+          p_search_term?: string
+          p_max_keywords?: number
+          p_suggestions_per_keyword?: number
+          p_max_docs?: number
+        }
+        Returns: Json
+      }
       collaborate_swalang_fn_get_suggestion_votes: {
         Args: { p_suggestion_id: string }
         Returns: number
@@ -431,6 +479,10 @@ export type Database = {
       get_distinct_doc_categories: {
         Args: Record<PropertyKey, never>
         Returns: string[]
+      }
+      is_file_publicly_shared_or_descendant: {
+        Args: { p_file_id: string }
+        Returns: boolean
       }
     }
     Enums: {

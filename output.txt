@@ -1,0 +1,1760 @@
+
+
+
+// ===========================src/routes/swalang/+page.server.ts start here===========================
+// src/routes/swalang/+page.server.ts
+import { fail, redirect } from '@sveltejs/kit';
+import type { PageServerLoad, Actions } from './$types';
+import { z } from 'zod';
+import { ZodError } from 'zod';
+import { listCategories, createCategory } from '$lib/services/swahiliCollaborationService'; // Import service functions
+
+// Define Zod schema for form validation
+const createCategorySchema = z.object({
+  name: z.string().trim().min(1, { message: "Category name cannot be empty." }).max(100, { message: "Name too long (max 100)."}),
+  description: z.string().trim().max(500, { message: "Description too long (max 500)."}).optional(), // Optional description
+});
+
+// Load function: Fetch categories on server load
+export const load: PageServerLoad = async (event) => {
+    const { locals: { supabase, safeGetSession:getSession } } = event; // Use server client from hooks
+
+    const session = await getSession();
+    console.log("Session:", session)
+    if (!session) {
+        // Optionally redirect or just let UI handle showing login prompt
+        // throw redirect(303, '/auth/login?redirectTo=/swalang');
+        return { categories: [], error: 'Authentication required to collaborate.', session }; // Return empty list if not logged in
+    }
+
+    const { data: categories, error } = await listCategories(supabase); // Pass server client
+
+    if (error) {
+        console.error("Error loading categories:", error);
+        // Return error to the page props
+        return { categories: [], error: `Error loading categories: ${error.message}`, session };
+    }
+
+    return { categories: categories || [], error: null, session }; // Pass categories and session to page
+};
+
+// Actions: Handle form submissions
+export const actions: Actions = {
+    // Action for creating a new category
+    createCategory: async (event) => {
+        const { request, locals: { supabase, safeGetSession:getSession } } = event;
+
+        const session = await getSession();
+        if (!session) {
+            return fail(401, { error: 'You must be logged in to create a category.' });
+        }
+
+        const formData = await request.formData();
+        const name = formData.get('name');
+        const description = formData.get('description');
+
+        try {
+            // Validate form data using Zod schema
+            const validatedData = createCategorySchema.parse({
+                name: name,
+                description: description || undefined // Ensure optional field is handled
+            });
+
+            // Call the service function to create the category (passing server client)
+            const { data: newCategory, error } = await createCategory(supabase, {
+                name: validatedData.name,
+                description: validatedData.description
+            });
+
+            if (error) {
+                 // Return specific errors from the service layer
+                 return fail(400, { // Use 400 for bad request/validation type errors
+                     name, description, // Return submitted data to repopulate form
+                     error: error.message,
+                     errorCode: error.code // Pass code for specific handling if needed
+                 });
+            }
+
+            // Success!
+            // No need to return data, load function will re-run or use invalidateAll
+            // You could return a success message if desired:
+            // return { success: true, message: `Category "${newCategory?.name}" created!` };
+             return { success: true }; // Indicate success, form will clear
+
+        } catch (err) {
+            if (err instanceof ZodError) {
+                // Extract Zod validation errors
+                const errors = err.flatten().fieldErrors;
+                console.log("Validation Errors:", errors);
+                return fail(400, {
+                    name, description, // Return submitted data
+                    errors // Pass Zod errors object to the form
+                 });
+            }
+            // Handle unexpected errors
+            console.error("Unexpected error creating category:", err);
+            return fail(500, {
+                 name, description,
+                 error: 'An unexpected server error occurred.'
+             });
+        }
+    }
+};
+// ===========================src/routes/swalang/+page.server.ts ends here===========================
+
+
+
+
+// ===========================src/routes/swalang/+page.svelte start here===========================
+<script lang="ts">
+	import type { PageData } from './$types';
+	import { enhance } from '$app/forms';
+	import Icon from '$lib/components/Icon.svelte';
+
+	export let data: PageData;
+
+	let isSubmitting = false;
+
+	function handleFormUpdate({ formElement }: { formElement: HTMLFormElement }) {
+		isSubmitting = true;
+		return async ({ result, update }) => {
+			if (result.type === 'success') {
+				formElement.reset();
+			}
+			isSubmitting = false;
+			await update();
+		};
+	}
+</script>
+
+<div class="container mx-auto p-4 md:p-8">
+	<h1 class="text-3xl font-bold mb-6 text-gray-800 dark:text-gray-200">Swahili Keywords Collaboration</h1>
+
+	{#if !data.session}
+		<div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6" role="alert">
+			<p class="font-bold">Authentication Required</p>
+			<p>
+				Please
+				<a href="/auth/login?redirectTo=/swalang" class="underline font-medium">log in</a>
+				to view and contribute.
+			</p>
+		</div>
+	{/if}
+
+	{#if data.error && data.session}
+		<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert">
+			<p class="font-bold">Error Loading Categories</p>
+			<p>{data.error}</p>
+		</div>
+	{/if}
+
+	<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+		<!-- Category List -->
+		<div class="md:col-span-2">
+			<h2 class="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-300">Categories</h2>
+			{#if data.categories.length === 0 && !data.error && data.session}
+				<p class="text-gray-500 dark:text-gray-400 italic">
+					No categories found. Add one using the form!
+				</p>
+			{:else if data.categories.length > 0}
+				<div class="space-y-4">
+					{#each data.categories as category (category.id)}
+						<a
+							href={`/swalang/categories/${category.id}`}
+							class="block p-4 bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow border border-gray-200 dark:border-gray-700"
+						>
+							<h3 class="text-lg font-medium text-blue-600 dark:text-blue-400 mb-1">
+								{category.name}
+							</h3>
+							<p class="text-sm text-gray-600 dark:text-gray-400">
+								{category.description || 'No description provided.'}
+							</p>
+						</a>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		<!-- Add Category Form -->
+		{#if data.session}
+			<div class="md:col-span-1">
+				<h2 class="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-300">
+					Add New Category
+				</h2>
+				<form
+					method="POST"
+					action="?/createCategory"
+					use:enhance={handleFormUpdate}
+					class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700 space-y-4"
+				>
+					{#if data.form?.error}
+						<p
+							class="text-sm text-red-600 dark:text-red-400 mb-3 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded"
+						>
+							{data.form.error}
+						</p>
+					{/if}
+					{#if data.form?.success}
+						<p
+							class="text-sm text-green-600 dark:text-green-400 mb-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-500/30 rounded"
+						>
+							Category created successfully!
+						</p>
+					{/if}
+
+					<div>
+						<label
+							for="category-name"
+							class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+						>
+							Category Name <span class="text-red-500">*</span>
+						</label>
+						<input
+							type="text"
+							id="category-name"
+							name="name"
+							required
+							maxlength="100"
+							value={data.form?.name || ''}
+							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+							aria-describedby="name-error"
+						/>
+						{#if data.form?.errors?.name}
+							<p id="name-error" class="mt-1 text-xs text-red-600 dark:text-red-400">
+								{data.form.errors.name[0]}
+							</p>
+						{/if}
+					</div>
+
+					<div>
+						<label
+							for="category-description"
+							class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+						>
+							Description (Optional)
+						</label>
+						<textarea
+							id="category-description"
+							name="description"
+							rows="3"
+							maxlength="500"
+							class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white resize-none"
+							aria-describedby="description-error"
+						>{data.form?.description || ''}</textarea>
+						{#if data.form?.errors?.description}
+							<p id="description-error" class="mt-1 text-xs text-red-600 dark:text-red-400">
+								{data.form.errors.description[0]}
+							</p>
+						{/if}
+					</div>
+
+					<div>
+						<button
+							type="submit"
+							disabled={isSubmitting}
+							class="w-full inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 dark:focus:ring-offset-gray-800"
+						>
+							{#if isSubmitting}
+								<Icon name="loading" class="w-4 h-4 mr-2" /> Submitting...
+							{:else}
+								Create Category
+							{/if}
+						</button>
+					</div>
+				</form>
+			</div>
+		{/if}
+	</div>
+</div>
+
+// ===========================src/routes/swalang/+page.svelte ends here===========================
+
+
+
+// ===========================src/routes/swalang/categories/[categoryId]/+page.server.ts start here===========================
+// src/routes/swalang/categories/[categoryId]/+page.server.ts
+import { error as svelteKitError, fail, redirect } from '@sveltejs/kit';
+import type { PageServerLoad, Actions } from './$types';
+import { z, ZodError } from 'zod';
+import {
+    getCategoryById,
+    listKeywordsByCategory,
+    createKeyword
+} from '$lib/services/swahiliCollaborationService';
+
+// Schema for adding a keyword
+const createKeywordSchema = z.object({
+  english_keyword: z.string().trim().min(1, "Keyword cannot be empty.").max(150, "Keyword too long."),
+  description: z.string().trim().max(1000, "Description too long.").optional(),
+});
+
+// Load function: Fetch category details and its keywords
+export const load: PageServerLoad = async (event) => {
+    const { params, locals: { supabase, safeGetSession:getSession } } = event;
+    const categoryId = params.categoryId;
+
+    // Basic validation of categoryId format (UUID)
+    if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(categoryId)) {
+         throw svelteKitError(400, { message: 'Invalid Category ID format' }); // Use svelteKitError for load errors
+    }
+
+    const session = await getSession();
+    if (!session) {
+        // Allow viewing public categories/keywords even if not logged in? Adjust as needed.
+        // For now, let's require login to view details.
+        throw redirect(303, `/auth/login?redirectTo=/swalang/categories/${categoryId}`);
+    }
+
+    // Fetch category and keywords in parallel
+    const [categoryResult, keywordsResult] = await Promise.all([
+        getCategoryById(supabase, categoryId),
+        listKeywordsByCategory(supabase, categoryId)
+    ]);
+
+    // Handle category fetch error or not found
+    if (categoryResult.error) {
+        console.error("Error loading category details:", categoryResult.error);
+        if(categoryResult.error.code === 'NOT_FOUND') {
+             throw svelteKitError(404, { message: 'Category not found' });
+        }
+        // Throw a generic error for other DB issues
+        throw svelteKitError(500, { message: `Error loading category: ${categoryResult.error.message}` });
+    }
+
+    // Handle keywords fetch error (less critical than category not found)
+    let keywordsError: string | null = null;
+    if (keywordsResult.error) {
+        console.error("Error loading keywords:", keywordsResult.error);
+        keywordsError = `Could not load keywords: ${keywordsResult.error.message}`;
+    }
+
+    return {
+        category: categoryResult.data, // Category must exist if we reach here
+        keywords: keywordsResult.data || [],
+        keywordsError: keywordsError, // Pass keyword-specific error
+        categoryId: categoryId, // Pass ID for form action
+        session: session
+    };
+};
+
+// Actions: Handle new keyword submission
+export const actions: Actions = {
+    createKeyword: async (event) => {
+        const { request, params, locals: { supabase, safeGetSession:getSession } } = event;
+        const categoryId = params.categoryId; // Get categoryId from route params
+
+        const session = await getSession();
+        if (!session) {
+            return fail(401, { error: 'You must be logged in to add a keyword.' });
+        }
+
+         // Basic validation of categoryId format
+         if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(categoryId)) {
+             return fail(400, { error: 'Invalid Category ID provided.' });
+         }
+
+        const formData = await request.formData();
+        const english_keyword = formData.get('english_keyword');
+        const description = formData.get('description');
+
+        try {
+            const validatedData = createKeywordSchema.parse({
+                english_keyword: english_keyword,
+                description: description || undefined
+            });
+
+            const { data: newKeyword, error } = await createKeyword(supabase, {
+                english_keyword: validatedData.english_keyword,
+                description: validatedData.description,
+                category_id: categoryId // Pass the category ID from the route
+            });
+
+            if (error) {
+                 return fail(400, {
+                     english_keyword, description, // Return submitted data
+                     error: error.message,
+                     errorCode: error.code
+                 });
+            }
+
+            return { success: true }; // Success, load will re-run
+
+        } catch (err) {
+             if (err instanceof ZodError) {
+                const errors = err.flatten().fieldErrors;
+                return fail(400, { english_keyword, description, errors });
+            }
+            console.error("Unexpected error creating keyword:", err);
+            return fail(500, { english_keyword, description, error: 'An unexpected server error occurred.' });
+        }
+    }
+};
+// ===========================src/routes/swalang/categories/[categoryId]/+page.server.ts ends here===========================
+
+
+
+
+// ===========================src/routes/swalang/categories/[categoryId]/+page.svelte start here===========================
+<script lang="ts">
+	import type { PageData } from './$types';
+	import { enhance } from '$app/forms';
+	import Icon from '$lib/components/Icon.svelte';
+
+	export let data: PageData;
+
+	let isSubmittingKeyword = false;
+
+	function handleKeywordFormUpdate({ formElement }: { formElement: HTMLFormElement }) {
+		isSubmittingKeyword = true;
+		return async ({ result, update }) => {
+			if (result.type === 'success') {
+				formElement.reset();
+			}
+			isSubmittingKeyword = false;
+			await update();
+		};
+	}
+</script>
+
+<div class="container mx-auto p-4 md:p-8">
+	<!-- Breadcrumb -->
+	<div class="mb-4">
+		<a href="/swalang" class="text-blue-600 dark:text-blue-400 hover:underline text-sm">← Back to Categories</a>
+	</div>
+
+	{#if data.category}
+		<!-- Category Header -->
+		<div class="mb-6 pb-4 border-b border-gray-300 dark:border-gray-700">
+			<h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{data.category.name}</h1>
+			{#if data.category.description}
+				<p class="mt-2 text-md text-gray-600 dark:text-gray-400">{data.category.description}</p>
+			{/if}
+		</div>
+
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+			<!-- Keywords List -->
+			<div class="md:col-span-2">
+				<h2 class="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-300">Keywords</h2>
+
+				{#if data.keywordsError}
+					<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4" role="alert">
+						<p class="font-bold">Error Loading Keywords</p>
+						<p>{data.keywordsError}</p>
+					</div>
+				{/if}
+
+				{#if data.keywords.length === 0 && !data.keywordsError}
+					<p class="text-gray-500 dark:text-gray-400 italic">No keywords found in this category yet. Add one!</p>
+				{:else}
+					<div class="space-y-3" id="keywords-list">
+						{#each data.keywords as keyword (keyword.id)}
+							<a
+								href={`/swalang/keywords/${keyword.id}`}
+								class="block p-3 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-shadow border border-gray-200 dark:border-gray-700"
+							>
+								<h3 class="text-md font-medium text-gray-900 dark:text-gray-100 mb-1">
+									{keyword.english_keyword}
+								</h3>
+								{#if keyword.description}
+									<p class="text-sm text-gray-500 dark:text-gray-400">
+										{keyword.description}
+									</p>
+								{/if}
+							</a>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+			<!-- Keyword Form -->
+			{#if data.session}
+				<div class="md:col-span-1">
+					<h2 class="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-300">Add Keyword</h2>
+					<form
+						method="POST"
+						action="?/createKeyword"
+						use:enhance={handleKeywordFormUpdate}
+						class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700 space-y-4"
+					>
+						{#if data.form?.error}
+							<p class="text-sm text-red-600 dark:text-red-400 mb-3 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded">
+								{data.form.error}
+							</p>
+						{/if}
+
+						{#if data.form?.success}
+							<p class="text-sm text-green-600 dark:text-green-400 mb-3 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-500/30 rounded">
+								Keyword added successfully!
+							</p>
+						{/if}
+
+						<div>
+							<label for="keyword-english" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+								English Keyword <span class="text-red-500">*</span>
+							</label>
+							<input
+								type="text"
+								id="keyword-english"
+								name="english_keyword"
+								required
+								maxlength="150"
+								value={data.form?.english_keyword || ''}
+								class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+								aria-describedby="keyword-error"
+							/>
+							{#if data.form?.errors?.english_keyword}
+								<p id="keyword-error" class="mt-1 text-xs text-red-600 dark:text-red-400">
+									{data.form.errors.english_keyword[0]}
+								</p>
+							{/if}
+						</div>
+
+						<div>
+							<label for="keyword-description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+								Description (Optional)
+							</label>
+							<textarea
+								id="keyword-description"
+								name="description"
+								rows="3"
+								maxlength="1000"
+								class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white resize-none"
+								aria-describedby="kw-description-error"
+							>{data.form?.description || ''}</textarea>
+							{#if data.form?.errors?.description}
+								<p id="kw-description-error" class="mt-1 text-xs text-red-600 dark:text-red-400">
+									{data.form.errors.description[0]}
+								</p>
+							{/if}
+						</div>
+
+						<div>
+							<button
+								type="submit"
+								disabled={isSubmittingKeyword}
+								class="w-full inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 dark:focus:ring-offset-gray-800"
+							>
+								{#if isSubmittingKeyword}
+									<Icon name="loading" class="w-4 h-4 mr-2" /> Adding...
+								{:else}
+									Add Keyword
+								{/if}
+							</button>
+						</div>
+					</form>
+				</div>
+			{/if}
+		</div>
+	{:else}
+		<!-- Fallback if category failed to load -->
+		<p class="text-red-600 dark:text-red-400">Could not load category details.</p>
+		<p class="text-sm text-gray-500">{data.error || 'Unknown error'}</p>
+	{/if}
+</div>
+
+// ===========================src/routes/swalang/categories/[categoryId]/+page.svelte ends here===========================
+
+
+
+// ===========================src/routes/swalang/documentation/+page.server.ts start here===========================
+// src/routes/swalang/documentation/+page.server.ts
+import type { PageServerLoad } from './$types';
+import { listDocPages, listDocCategories } from '$lib/services/documentationService';
+import { error as svelteKitError } from '@sveltejs/kit';
+
+export const load: PageServerLoad = async (event) => {
+    const { url, locals: { supabase, safeGetSession:getSession } } = event;
+
+    // Get filter parameters from URL search params
+    const searchTerm = url.searchParams.get('search') || '';
+    const category = url.searchParams.get('category') || ''; // Default to 'all'
+    const limit = parseInt(url.searchParams.get('limit')??'1') || 50; 
+    const offset = parseInt(url.searchParams.get('offset')??'1') || 50;
+    const page = parseInt(url.searchParams.get('page')??'1') || 1;
+    // Add pagination params later: const page = parseInt(url.searchParams.get('page') || '1'); const limit = 20;
+
+    const session = await getSession(); // Needed to check if user can add docs
+
+    // Fetch distinct categories and documentation pages in parallel
+    const [categoriesResult, pagesResult] = await Promise.all([
+        listDocCategories(supabase),
+        listDocPages(supabase, {
+            searchTerm: searchTerm,
+            category: category,
+            limit: limit, // Add pagination later
+            offset: (page - 1) * limit
+        })
+    ]);
+
+    // Handle errors - log them but try to show the page anyway if possible
+    if (categoriesResult.error) {
+        console.error("Error loading documentation categories:", categoriesResult.error);
+        // Don't throw, allow page to render without category filter maybe
+    }
+    if (pagesResult.error) {
+         console.error("Error loading documentation pages:", pagesResult.error);
+         // Optionally throw if this is critical
+         // throw svelteKitError(500, { message: `Failed to load documentation: ${pagesResult.error.message}` });
+    }
+    console.log(categoriesResult, pagesResult)
+
+    return {
+        docPages: pagesResult.data || [],
+        docPagesError: pagesResult.error?.message || null,
+        categories: categoriesResult.data || [],
+        categoriesError: categoriesResult.error?.message || null,
+        // Pass back current filter values for the UI
+        currentSearchTerm: searchTerm,
+        currentCategory: category??"all",
+        session: session, // Pass session to determine if Add button should show
+        // Add pagination data later: currentPage: page, totalPages: Math.ceil(count / limit)
+    };
+};
+
+// No actions on this page itself, actions will be on create/edit pages
+// ===========================src/routes/swalang/documentation/+page.server.ts ends here===========================
+
+
+
+
+// ===========================src/routes/swalang/documentation/+page.svelte start here===========================
+<script lang="ts">
+    import type { PageData } from './$types';
+    import { goto } from '$app/navigation';
+    import { debounce } from '$lib/utils/debounce'; // Simple debounce utility (create if needed)
+    import Icon from '$lib/components/Icon.svelte';
+	import { page } from '$app/state';
+  
+    export let data: PageData;
+  
+    // Local state bound to form inputs
+    let searchTerm = data.currentSearchTerm || '';
+    let selectedCategory = data.currentCategory || 'all';
+  
+    // Debounced search function to update URL without constant requests
+    const applyFilters = debounce(() => {
+      const params = new URLSearchParams();
+      if (searchTerm.trim()) {
+          params.set('search', searchTerm.trim());
+      }
+      if (selectedCategory && selectedCategory !== 'all') {
+          params.set('category', selectedCategory);
+      }
+      // Reset page number if adding pagination later
+      // params.set('page', '1');
+  
+      const queryString = params.toString();
+      goto(`/swalang/documentation${queryString ? `?${queryString}` : ''}`, {
+          keepFocus: true, // Keep focus on input if possible
+          noScroll: true, // Don't jump to top on filter change
+          replaceState: true // Update history without adding new entry
+      });
+    }, 300); // Debounce for 300ms
+  
+    // Trigger filter apply when local state changes
+    $: if (searchTerm !== data.currentSearchTerm || selectedCategory !== data.currentCategory) {
+        applyFilters();
+    }
+    // Sync local state if data changes from navigation/load
+     $: if (data.currentSearchTerm !== searchTerm) searchTerm = data.currentSearchTerm;
+     $: if (data.currentCategory !== selectedCategory) selectedCategory = data.currentCategory;
+  
+  
+  </script>
+  
+  <div class="container mx-auto p-4 md:p-8">
+      <h1 class="text-3xl font-bold mb-6 text-gray-800 dark:text-gray-200">Swalang Documentation</h1>
+  
+      <!-- Controls: Search, Filter, Add Button -->
+      <div class="mb-6 flex flex-wrap items-center justify-between gap-4 bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 shadow-sm">
+          <!-- Search Input -->
+          <div class="relative flex-grow sm:flex-grow-0 sm:w-64 md:w-72">
+              <input
+                  type="search"
+                  placeholder="Search title or summary..."
+                  bind:value={searchTerm}
+                  class="w-full pl-8 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white text-sm"
+                  aria-label="Search Documentation"
+              />
+               <div class="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                   <Icon name="loading" class="w-4 h-4 text-gray-400"/> <!-- Replace with Search Icon -->
+               </div>
+          </div>
+  
+          <!-- Category Filter Dropdown -->
+          {#if data.categories.length > 0 || data.categoriesError}
+              <div class="flex-grow sm:flex-grow-0">
+                   <label for="doc-category-filter" class="sr-only">Filter by Category</label>
+                   {#if data.categoriesError}
+                        <span class="text-xs text-red-500 dark:text-red-400 italic" title={data.categoriesError}>Could not load categories</span>
+                   {:else}
+                      <select
+                          id="doc-category-filter"
+                          bind:value={selectedCategory}
+                          class="text-sm p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[200px] shadow-sm"
+                          aria-label="Filter by Category"
+                      >
+                          <option value="all">All Categories</option>
+                          {#each data.categories as cat (cat)}
+                              <option onclick={()=>{page.url.searchParams.set('category', cat)}} value={cat}>{cat}</option>
+                          {/each}
+                      </select>
+                   {/if}
+              </div>
+          {/if}
+  
+          <!-- Add Documentation Button -->
+          {#if data.session} 
+              <a href="/swalang/documentation/edit"
+                 class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 dark:focus:ring-offset-gray-800"
+              >
+                   <Icon name="plus" class="w-4 h-4 mr-2"/> Add Documentation
+              </a>
+          {/if}
+      </div>
+  
+  
+      <!-- Documentation List / Loading / Error -->
+      <div class="documentation-list space-y-4">
+          {#if data.docPagesError}
+              <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4" role="alert">
+                  <p class="font-bold">Error Loading Documentation</p>
+                  <p>{data.docPagesError}</p>
+              </div>
+          {:else if data.docPages.length === 0}
+               <div class="text-center py-10">
+                  <p class="text-gray-500 dark:text-gray-400 italic">
+                      {#if data.currentSearchTerm || data.currentCategory !== 'all'}
+                          No documentation found matching your filters.
+                      {:else}
+                          No documentation pages available yet.
+                      {/if}
+                  </p>
+               </div>
+          {:else}
+               {#each data.docPages as docPage (docPage.slug)}
+                   <a href={`/swalang/documentation/${docPage.slug}`} class="block p-4 bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-md transition-shadow border border-gray-200 dark:border-gray-700">
+                      <h3 class="text-lg font-medium text-blue-600 dark:text-blue-400 mb-1">{docPage.title}</h3>
+                      {#if docPage.summary}
+                          <p class="text-sm text-gray-600 dark:text-gray-400 mb-2">{docPage.summary}</p>
+                      {/if}
+                      {#if docPage.category}
+                          <span class="inline-block bg-gray-200 dark:bg-gray-700 rounded-full px-2 py-0.5 text-xs font-semibold text-gray-700 dark:text-gray-300">{docPage.category}</span>
+                      {/if}
+                   </a>
+               {/each}
+          {/if}
+      </div>
+  
+       <!-- Add Pagination Controls Here Later -->
+  
+  </div>
+  
+  <style>
+      /* Add any specific styles if needed */
+       /* Fix potential overlap of icon in search input */
+      input[type="search"]::-webkit-search-cancel-button {
+          /* Optional: Hide default clear button if needed */
+          /* -webkit-appearance: none; */
+      }
+  </style>
+// ===========================src/routes/swalang/documentation/+page.svelte ends here===========================
+
+
+
+
+// ===========================src/routes/swalang/documentation/[[slug]]/edit/+page.server.ts start here===========================
+// src/routes/swalang/documentation/[[slug]]/edit/+page.server.ts
+import { error as svelteKitError, fail, redirect } from '@sveltejs/kit';
+import type { PageServerLoad, Actions } from './$types';
+import { z, ZodError } from 'zod';
+import {
+    getDocPageBySlug,
+    createDocPage,
+    updateDocPage
+} from '$lib/services/documentationService';
+import type { DocPageData } from '$lib/services/documentationService';
+
+// Combined Zod schema for create/update validation
+const docPageFormSchema = z.object({
+  // Slug is only required for creation, validated separately
+  slug: z.string().trim().min(1, "Slug cannot be empty.").max(150).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Invalid slug: use lowercase letters, numbers, and hyphens only.").optional(), // Optional for update
+  title: z.string().trim().min(1, "Title cannot be empty.").max(200),
+  category: z.string().trim().max(100).optional(),
+  summary: z.string().trim().max(500).optional(),
+  content_eng: z.string().optional(),
+  content_sw: z.string().optional(),
+});
+
+
+// Load function: Fetch existing data for editing, or provide empty structure for creation
+export const load: PageServerLoad = async (event) => {
+    const { params, locals: { supabase, safeGetSession:getSession } } = event;
+    const slug = params.slug; // Slug from the URL ([[/slug/]])
+    const isEditing = !!slug; // Are we editing an existing page?
+
+    const session = await getSession();
+    if (!session) {
+        // Require login for creating/editing
+        throw redirect(303, `/auth/login?redirectTo=${event.url.pathname}`);
+    }
+
+    let docData: DocPageData | null = null;
+
+    if (isEditing) {
+        const { data, error } = await getDocPageBySlug(supabase, slug);
+        if (error) {
+            console.error(`Error loading doc page '${slug}' for edit:`, error);
+             if (error.code === 'NOT_FOUND') {
+                throw svelteKitError(404, { message: `Documentation page '${slug}' not found.` });
+            }
+            throw svelteKitError(500, { message: `Failed to load documentation: ${error.message}` });
+        }
+        docData = data;
+        // TODO: Add permission check here - does the logged-in user have rights to edit this specific page based on RLS/creator/editor?
+        // This requires fetching the docData including created_by/last_edited_by and comparing with session.user.id
+        // If no permission: throw error(403, { message: 'You do not have permission to edit this page.' });
+    }
+
+    return {
+        isEditing: isEditing,
+        // Provide existing data for edit, or initial empty values for create
+        docData: isEditing ? docData : {
+            slug: '', title: '', category: '', summary: '', content_eng: '', content_sw: ''
+        },
+        session: session
+    };
+};
+
+// Actions: Handle create or update submissions
+export const actions: Actions = {
+    saveDoc: async (event) => {
+        const { request, params, locals: { supabase, safeGetSession:getSession } } = event;
+        const slugParam = params.slug; // Slug from URL (only present for edits)
+        const isEditing = !!slugParam;
+
+        const session = await getSession();
+        if (!session) {
+            return fail(401, { error: 'You must be logged in.' });
+        }
+
+        const formData = await request.formData();
+        const formDataObj = Object.fromEntries(formData);
+
+        try {
+             // Validate common fields
+             const validatedBase = docPageFormSchema.parse(formDataObj);
+
+             // If creating, validate slug specifically
+             if (!isEditing) {
+                 if (!validatedBase.slug || validatedBase.slug.length === 0) {
+                     return fail(400, { ...formDataObj, errors: { slug: ['Slug is required for new pages.'] }});
+                 }
+                 // Optionally re-validate just the slug with the regex if needed
+                 const slugValidation = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Invalid slug format.").safeParse(validatedBase.slug);
+                 if(!slugValidation.success) {
+                      return fail(400, { ...formDataObj, errors: { slug: slugValidation.error.flatten().formErrors }});
+                 }
+             }
+
+            let resultSlug: string | undefined = slugParam; // Use slug from URL for update
+            let serviceError: any = null;
+
+            if (isEditing && slugParam) {
+                // --- Update Existing Page ---
+                const { data, error } = await updateDocPage(supabase, slugParam, {
+                    // Pass only fields that can be updated
+                    title: validatedBase.title,
+                    category: validatedBase.category || null, // Handle empty string as null
+                    summary: validatedBase.summary || null,
+                    content_eng: validatedBase.content_eng || null,
+                    content_sw: validatedBase.content_sw || null,
+                });
+                 serviceError = error;
+                 // resultSlug = data?.slug; // Slug doesn't change on update
+            } else if (!isEditing && validatedBase.slug) {
+                 // --- Create New Page ---
+                 const { data, error } = await createDocPage(supabase, {
+                     slug: validatedBase.slug, // Use validated slug from form
+                     title: validatedBase.title,
+                     category: validatedBase.category || null,
+                     summary: validatedBase.summary || null,
+                     content_eng: validatedBase.content_eng || null,
+                     content_sw: validatedBase.content_sw || null,
+                 });
+                 serviceError = error;
+                 resultSlug = data?.slug; // Get the slug of the newly created page
+            } else {
+                 // Should not happen if validation is correct
+                  return fail(400, { ...formDataObj, error: 'Invalid operation state.' });
+            }
+
+            // Handle results from service call
+            if (serviceError) {
+                 return fail(400, { ...formDataObj, error: serviceError.message, errorCode: serviceError.code });
+            }
+
+            // Success! Redirect to the view page
+            if (resultSlug) {
+                throw redirect(303, `/swalang/documentation/${resultSlug}`); // Redirect to the view page
+            } else {
+                 // Should have a slug on success, but handle defensively
+                 console.error("Save successful but no slug returned.");
+                  return fail(500, { ...formDataObj, error: 'Save successful but failed to redirect.' });
+            }
+
+        } catch (err) {
+            if (err instanceof ZodError) {
+                const errors = err.flatten().fieldErrors;
+                return fail(400, { ...formDataObj, errors });
+            }
+            console.error("Unexpected error saving documentation:", err);
+            return fail(500, { ...formDataObj, error: 'An unexpected server error occurred.' });
+        }
+    }
+};
+// ===========================src/routes/swalang/documentation/[[slug]]/edit/+page.server.ts ends here===========================
+
+
+
+
+// ===========================src/routes/swalang/documentation/[[slug]]/edit/+page.svelte start here===========================
+<script lang="ts">
+    import type { PageData, ActionData } from './$types';
+    import { enhance } from '$app/forms';
+    import Icon from '$lib/components/Icon.svelte';
+    import AIChat from '$lib/components/AIChat.svelte'; // Import AI Chat
+    import { onMount } from 'svelte';
+	import AiContextSelector from '$lib/components/AIContextSelector.svelte';
+  
+    export let data: PageData; // From load: isEditing, docData
+    export let form: ActionData; // From actions: saveDoc results
+  
+    let isSubmitting = false;
+  
+    // --- AI Assistance State ---
+    let showAiChat = false;
+    let aiContext = ''; // Context selected by the user
+    let targetField: 'title' | 'summary' | 'content_eng' | 'content_sw' | null = null; // Which field AI should help with
+  
+    // Bind form fields to data for editing, or initialize for creating
+    let slug = data.docData?.slug || '';
+    let title = data.docData?.title || '';
+    let category = data.docData?.category || '';
+    let summary = data.docData?.summary || '';
+    let content_eng = data.docData?.content_eng || '';
+    let content_sw = data.docData?.content_sw || '';
+  
+    // Keep track of initial slug for comparison if needed
+    const initialSlug = data.docData?.slug;
+  
+    // Enhance function for save form
+    function handleSaveFormUpdate() {
+      isSubmitting = true;
+      return async ({ result, update }: { result: any, update: any }) => {
+        // Redirect happens automatically on success via server-side redirect
+        // Errors are handled by the 'form' prop reactivity
+        isSubmitting = false;
+        await update();
+      };
+    }
+  
+    // --- AI Context Selection Logic ---
+    // TODO: Implement UI for selecting context. This could involve:
+    // 1. Modals/Drawers listing categories, keywords, other docs.
+    // 2. Fetching data for these items using services.
+    // 3. Allowing user to select text/content.
+    // 4. Updating the `aiContext` variable.
+    function openContextSelector(field: 'title' | 'summary' | 'content_eng' | 'content_sw') {
+        targetField = field;
+        // For now, just use existing content as context example
+        switch (field) {
+            case 'title': aiContext = title; break;
+            case 'summary': aiContext = summary; break;
+            case 'content_eng': aiContext = content_eng; break;
+            case 'content_sw': aiContext = content_sw; break;
+        }
+        showAiChat = true;
+        console.log(`AI context set for ${field}:`, aiContext);
+        // In a real implementation, you'd open a modal here to fetch/select context
+        alert("AI Context Selection UI not implemented yet. Using current field content as example context.");
+    }
+  
+    // --- Event Handlers ---
+    let notification: { type: 'success' | 'error'; message: string } | null = null;
+    function handleNotification(event: CustomEvent<{ type: 'success' | 'error'; message: string } | null>){
+        notification = event.detail;
+        if(notification){
+                setTimeout(() => notification = null, 3500);
+        }
+    }
+
+     // --- AI Context Selection Logic ---
+     let showAiContextSelector = false; // Renamed for clarity
+    function openContextSelectorModal(field: 'title' | 'summary' | 'content_eng' | 'content_sw') {
+        targetField = field;
+        showAiContextSelector = true; // Open the selector modal
+        showAiChat = false; // Ensure chat is closed when selector opens
+    }
+
+    function handleContextSelected(event: CustomEvent<string>) {
+        aiContext = event.detail; // Get the selected context string
+        showAiContextSelector = false; // Close selector modal
+        showAiChat = true; // Open the AI chat modal with the new context
+        console.log(`Context selected for ${targetField}:`, aiContext);
+    }
+  </script>
+  
+  <div class="container mx-auto p-4 md:p-8 relative">
+  
+      <!-- Back Link -->
+      <div class="mb-4">
+          {#if data.isEditing}
+              <a href={`/swalang/documentation/${initialSlug}`} class="text-blue-600 dark:text-blue-400 hover:underline text-sm">← Back to Documentation</a>
+          {:else}
+              <a href="/swalang/documentation" class="text-blue-600 dark:text-blue-400 hover:underline text-sm">← Back to Documentation Index</a>
+          {/if}
+      </div>
+  
+      <h1 class="text-3xl font-bold mb-6 text-gray-800 dark:text-gray-200">
+          {data.isEditing ? 'Edit Documentation' : 'Create New Documentation'}
+      </h1>
+  
+      <!-- Form for Creating/Editing -->
+      <form
+          method="POST"
+          action="?/saveDoc"
+          use:enhance={handleSaveFormUpdate}
+          class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700 space-y-6"
+      >
+           <!-- Display general form errors -->
+           {#if form?.error}
+               <p class="text-sm text-red-600 dark:text-red-400 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded">{form.error}</p>
+           {/if}
+  
+          <!-- Slug Input (Readonly for edit, required for create) -->
+          <div>
+              <label for="doc-slug" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Slug (URL Identifier) {#if !data.isEditing}<span class="text-red-500">*</span>{/if}
+              </label>
+              <input
+                  type="text"
+                  id="doc-slug"
+                  name="slug"
+                  required={!data.isEditing}
+                  readonly={data.isEditing}
+                  bind:value={slug}
+                  placeholder="e.g., standard-library-io"
+                  pattern="^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                  title="Lowercase letters, numbers, and hyphens only."
+                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white read-only:bg-gray-100 dark:read-only:bg-gray-600 read-only:cursor-not-allowed"
+                  aria-describedby="slug-error"
+              />
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Unique URL path (e.g., /swalang/documentation/<b>{slug || 'your-slug'}</b>). Cannot be changed after creation.</p>
+              {#if form?.errors?.slug} <p id="slug-error" class="mt-1 text-xs text-red-600 dark:text-red-400">{form.errors.slug[0]}</p> {/if}
+          </div>
+  
+          <!-- Title Input -->
+           <div class="relative group">
+              <label for="doc-title" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title <span class="text-red-500">*</span></label>
+              <input
+                  type="text"
+                  id="doc-title"
+                  name="title"
+                  required
+                  bind:value={title}
+                  placeholder="e.g., Standard Input/Output"
+                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  aria-describedby="title-error"
+              />
+               {#if form?.errors?.title} <p id="title-error" class="mt-1 text-xs text-red-600 dark:text-red-400">{form.errors.title[0]}</p> {/if}
+               <!-- AI Button -->
+               <button type="button" on:click={() => openContextSelectorModal('title')} title="Get AI Help for Title"
+                class="absolute top-[28px] right-2 p-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs">AI Context</button>
+                <!-- <button type="button" on:click={() => openContextSelector('title')} title="Get AI Help for Title"
+                      class="absolute top-[28px] right-2 p-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs">AI ✨</button> -->
+          </div>
+  
+           <!-- Category Input -->
+           <div>
+              <label for="doc-category" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Category (Optional)</label>
+              <input
+                  type="text"
+                  id="doc-category"
+                  name="category"
+                  bind:value={category}
+                  placeholder="e.g., Standard Library, Syntax"
+                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  aria-describedby="category-error"
+              />
+              {#if form?.errors?.category} <p id="category-error" class="mt-1 text-xs text-red-600 dark:text-red-400">{form.errors.category[0]}</p> {/if}
+          </div>
+  
+           <!-- Summary Textarea -->
+          <div class="relative group">
+              <label for="doc-summary" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Summary (Optional)</label>
+              <textarea
+                  id="doc-summary"
+                  name="summary"
+                  rows="3"
+                  bind:value={summary}
+                  placeholder="A brief summary for listings..."
+                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white resize-y"
+                  aria-describedby="summary-error"
+              ></textarea>
+               {#if form?.errors?.summary} <p id="summary-error" class="mt-1 text-xs text-red-600 dark:text-red-400">{form.errors.summary[0]}</p> {/if}
+               <!-- AI Button -->
+               <button type="button" on:click={() => openContextSelectorModal('summary')} title="Get AI Help for Summary"
+                class="absolute top-[28px] right-2 p-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs">AI Context</button>
+                <!-- <button type="button" on:click={() => openContextSelector('summary')} title="Get AI Help for Summary"
+                      class="absolute top-[28px] right-2 p-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs">AI ✨</button> -->
+          </div>
+  
+          <!-- Content English Textarea -->
+          <div class="relative group">
+              <label for="doc-content-eng" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content (English, Markdown)</label>
+              <textarea
+                  id="doc-content-eng"
+                  name="content_eng"
+                  rows="15"
+                  bind:value={content_eng}
+                  placeholder="Write documentation here using Markdown..."
+                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white resize-y font-mono text-sm"
+                  aria-describedby="content-eng-error"
+              ></textarea>
+               {#if form?.errors?.content_eng} <p id="content-eng-error" class="mt-1 text-xs text-red-600 dark:text-red-400">{form.errors.content_eng[0]}</p> {/if}
+              <!-- AI Button -->
+              <button type="button" on:click={() => openContextSelectorModal('content_eng')} title="Get AI Help for English Content"
+                class="absolute top-[28px] right-2 p-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs">AI Context</button>
+                <!-- <button type="button" on:click={() => openContextSelector('content_eng')} title="Get AI Help for English Content"
+                      class="absolute top-[28px] right-2 p-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs">AI ✨</button> -->
+          </div>
+  
+          <!-- Content Swahili Textarea -->
+          <div class="relative group">
+              <label for="doc-content-sw" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Content (Swahili, Markdown)</label>
+              <textarea
+                  id="doc-content-sw"
+                  name="content_sw"
+                  rows="15"
+                  bind:value={content_sw}
+                  placeholder="Andika nyaraka hapa ukitumia Markdown..."
+                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white resize-y font-mono text-sm"
+                  aria-describedby="content-sw-error"
+              ></textarea>
+               {#if form?.errors?.content_sw} <p id="content-sw-error" class="mt-1 text-xs text-red-600 dark:text-red-400">{form.errors.content_sw[0]}</p> {/if}
+               <!-- AI Button -->
+               <button type="button" on:click={() => openContextSelectorModal('content_sw')} title="Get AI Help for Swahili Content"
+                class="absolute top-[28px] right-2 p-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs">AI Context</button>
+                <!-- <button type="button" on:click={() => openContextSelector('content_sw')} title="Get AI Help for Swahili Content"
+                      class="absolute top-[28px] right-2 p-1 rounded bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs">AI ✨</button> -->
+          </div>
+  
+          <!-- Submit Button -->
+          <div class="flex justify-end">
+               <button
+                   type="submit"
+                   disabled={isSubmitting}
+                   class="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 dark:focus:ring-offset-gray-800"
+               >
+                   {#if isSubmitting} <Icon name="loading" class="w-4 h-4 mr-2"/> Saving...
+                   {:else} <Icon name="loading" class="w-4 h-4 mr-2"/> {data.isEditing ? 'Save Changes' : 'Create Page'}
+                   {/if} <!-- Replace icon -->
+               </button>
+          </div>
+      </form>
+
+      {#if showAiContextSelector}
+        <AiContextSelector
+            {data}
+            {targetField}
+            on:close={() => showAiContextSelector = false}
+            on:selectContext={handleContextSelected}
+        />
+      {/if}
+  
+      <!-- AI Chat Modal/Drawer (Conditional Rendering) -->
+      {#if showAiChat}
+          <div class="fixed inset-0 bg-black bg-opacity-50 z-40 flex items-center justify-center p-4" on:click|self={() => showAiChat = false}> 
+               <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full h-[70vh] max-h-[600px] flex flex-col overflow-hidden" on:click|stopPropagation>
+                   <div class="p-3 border-b dark:border-gray-700 flex justify-between items-center flex-shrink-0">
+                        <h3 class="font-semibold text-lg dark:text-white">AI Assistant {targetField ? `(for ${targetField})` : ''}</h3>
+                        <button on:click={() => showAiChat = false} class="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600">×</button>
+                   </div>
+                   <div class="flex-grow min-h-0">
+                      <AIChat data={data} context={aiContext} on:notification={handleNotification} />
+                   </div>
+              </div>
+          </div>
+      {/if}
+  
+  </div>
+  
+  <style>
+      /* Add styles if needed, e.g., for AI button positioning/appearance */
+      .group:hover .ai-button { /* Example using group-hover */
+          opacity: 1;
+      }
+  </style>
+// ===========================src/routes/swalang/documentation/[[slug]]/edit/+page.svelte ends here===========================
+
+
+
+
+// ===========================src/routes/swalang/documentation/[slug]/+page.server.ts start here===========================
+// src/routes/swalang/documentation/[slug]/+page.server.ts
+import { error as svelteKitError } from '@sveltejs/kit';
+import type { PageServerLoad } from './$types';
+// Import from the new service file
+import { getDocPageBySlug } from '$lib/services/documentationService'; // <<< UPDATED IMPORT
+
+export const load: PageServerLoad = async (event) => {
+    const { params, url, locals: { supabase } } = event;
+    const slug = params.slug;
+
+    if (!slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+        throw svelteKitError(400, { message: 'Invalid documentation identifier format.' });
+    }
+
+    const requestedLang = url.searchParams.get('language')?.toLowerCase();
+    const currentLanguage: 'eng' | 'sw' = (requestedLang === 'sw') ? 'sw' : 'eng';
+
+    // Fetch the documentation page data using the new service function
+    const { data: docData, error: docError } = await getDocPageBySlug(supabase, slug);
+
+    if (docError) {
+        console.error(`Error loading documentation for slug '${slug}':`, docError);
+        if (docError.code === 'NOT_FOUND') {
+            throw svelteKitError(404, { message: `Documentation for '${slug}' not found.` });
+        }
+        throw svelteKitError(500, { message: `Failed to load documentation: ${docError.message}` });
+    }
+
+    // Select content based on language
+    const documentationContent = currentLanguage === 'sw' ? docData.content_sw : docData.content_eng;
+    const contentAvailable = documentationContent !== null && documentationContent !== undefined;
+
+    if (!contentAvailable) {
+         console.warn(`Documentation content for lang='${currentLanguage}' is missing for slug '${slug}'.`);
+    }
+
+    // Return data needed by the page component
+    return {
+        ...docData,
+        docId: docData.id, // Changed from doc_id if schema changed
+        slug: docData.slug,
+        title: docData.title, // Add title
+        content: documentationContent ?? `*Documentation in ${currentLanguage === 'sw' ? 'Swahili' : 'English'} is not available yet.*`,
+        currentLanguage: currentLanguage,
+        otherLanguageAvailable: currentLanguage === 'eng'
+            ? (docData.content_sw !== null && docData.content_sw !== undefined)
+            : (docData.content_eng !== null && docData.content_eng !== undefined),
+        // Remove keyword data as it's no longer directly linked here
+        // keyword: docData.keyword,
+    };
+};
+
+// No actions defined here yet for editing documentation
+// export const actions: Actions = { /* ... add update action later ... */ };
+// ===========================src/routes/swalang/documentation/[slug]/+page.server.ts ends here===========================
+
+
+
+
+// ===========================src/routes/swalang/documentation/[slug]/+page.svelte start here===========================
+<script lang="ts">
+    import type { PageData } from './$types';
+    import { renderMarkdown } from '$lib/utils/renderMarkdown';
+	import Icon from '$lib/components/Icon.svelte';
+  
+    export let data: PageData; // From load: docId, slug, title, content, currentLanguage, etc.
+  
+    
+  
+    // Determine the URL for the other language
+    $: otherLang = data.currentLanguage === 'eng' ? 'sw' : 'eng';
+    $: switchLangUrl = `/swalang/documentation/${data.slug}?language=${otherLang}`;
+  
+  </script>
+  
+  <div class="container mx-auto p-4 md:p-8">
+  
+      <!-- Breadcrumb or Back Link -->
+      <div class="mb-4 text-sm">
+          <!-- TODO: Add link to a documentation index page if you create one -->
+          <a href="/swalang" class="text-blue-600 dark:text-blue-400 hover:underline">Collaboration Home</a>
+          <span class="mx-1 text-gray-400">/</span>
+          <span class="text-gray-600 dark:text-gray-300">Documentation</span>
+          <!-- Add category link here if available: / data.category -->
+      </div>
+  
+      {#if data.title}
+          <!-- Documentation Header -->
+          <div class="mb-6 pb-4 border-b border-gray-300 dark:border-gray-700">
+              <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{data.title}</h1>
+               <!-- Optionally display summary if it exists -->
+               {#if data.summary}
+                   <p class="mt-1 text-md text-gray-600 dark:text-gray-400">{data.summary}</p>
+               {/if}
+          </div>
+  
+          <!-- Language Switcher -->
+          <div class="mb-6 flex justify-end items-center space-x-2 text-sm">
+             <!-- ... (language switcher logic remains the same) ... -->
+              <span class="text-gray-500 dark:text-gray-400">View in:</span>
+              {#if data.currentLanguage === 'eng'} <span class="font-semibold text-gray-800 dark:text-gray-200">English</span> {:else} <a href={`/swalang/documentation/${data.slug}?language=eng`} class="text-blue-600 dark:text-blue-400 hover:underline">English</a> {/if}
+              {#if data.otherLanguageAvailable}
+                   <span class="text-gray-300 dark:text-gray-600">|</span>
+                   {#if data.currentLanguage === 'sw'} <span class="font-semibold text-gray-800 dark:text-gray-200">Swahili</span> {:else} <a href={`/swalang/documentation/${data.slug}?language=sw`} class="text-blue-600 dark:text-blue-400 hover:underline">Swahili</a> {/if}
+               {/if}
+
+               {#if data.session?.user?.id == data?.created_by} 
+                    <a href={`/swalang/documentation/${data?.slug ? data.slug+'/edit' : 'edit'}`}
+                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 dark:focus:ring-offset-gray-800"
+                    >
+                        <Icon name="swalang" class="w-4 h-4 mr-2"/> EDIT
+                    </a>
+                {/if}
+          </div>
+  
+  
+          <!-- Documentation Content -->
+          <div class="documentation-content prose prose-lg dark:prose-invert max-w-none bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+               {#await renderMarkdown(data.content)}
+                  <p class="opacity-50 text-gray-500 dark:text-gray-400">Loading documentation...</p>
+               {:then htmlContent}
+                  {@html htmlContent}
+               {:catch error}
+                  <p class="text-red-500 dark:text-red-400">Error rendering documentation.</p>
+               {/await}
+          </div>
+  
+           <!-- Add link to edit documentation page later -->
+           <!-- <div class="mt-6 text-right text-sm">
+              <a href={`/swalang/documentation/${data.slug}/edit?language=${data.currentLanguage}`} class="text-blue-600 dark:text-blue-400 hover:underline">Edit this page</a>
+           </div> -->
+  
+      {:else}
+          <!-- Fallback if data somehow missing despite load success -->
+          <p class="text-red-500 dark:text-red-400">Could not load documentation details.</p>
+      {/if}
+  </div>
+  
+  <style>
+      /* Reuse prose styles defined elsewhere or add them here */
+      /* ... */
+      .prose :global(pre) { /* ... */ }
+      .prose :global(code):not(:global(pre code)) { /* ... */ }
+      /* ... */
+  </style>
+// ===========================src/routes/swalang/documentation/[slug]/+page.svelte ends here===========================
+
+
+
+
+// ===========================src/routes/swalang/keywords/[keywordId]/+page.server.ts start here===========================
+// src/routes/swalang/keywords/[keywordId]/+page.server.ts
+import { error as svelteKitError, fail, redirect } from '@sveltejs/kit';
+import type { PageServerLoad, Actions } from './$types';
+import { z, ZodError } from 'zod';
+import {
+    getKeywordById,
+    listSuggestionsByKeyword,
+    createSuggestion,
+    castVote
+} from '$lib/services/swahiliCollaborationService';
+
+// Validation schemas for actions
+const createSuggestionSchema = z.object({
+  swahili_word: z.string().trim().min(1, "Swahili word cannot be empty.").max(200),
+  description: z.string().trim().max(1500).optional(),
+});
+
+const castVoteSchema = z.object({
+  suggestionId: z.string().uuid(),
+  voteValue: z.coerce.number().int().min(-1).max(1), // Coerce form value to number
+});
+
+// Load function: Fetch keyword details and its suggestions
+export const load: PageServerLoad = async (event) => {
+    const { params, locals: { supabase, safeGetSession:getSession } } = event;
+    const keywordId = params.keywordId;
+
+    if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(keywordId)) {
+         throw svelteKitError(400, { message: 'Invalid Keyword ID format' });
+    }
+
+    const session = await getSession(); // Get session regardless to determine user's vote later
+
+    // Fetch keyword and suggestions in parallel
+    const [keywordResult, suggestionsResult] = await Promise.all([
+        getKeywordById(supabase, keywordId),
+        // Pass authenticated client to get user-specific vote status
+        listSuggestionsByKeyword(supabase, keywordId)
+    ]);
+
+    // Handle keyword fetch error or not found
+    if (keywordResult.error) {
+        console.error("Error loading keyword details:", keywordResult.error);
+        if(keywordResult.error.code === 'NOT_FOUND') {
+             throw svelteKitError(404, { message: 'Keyword not found' });
+        }
+        throw svelteKitError(500, { message: `Error loading keyword: ${keywordResult.error.message}` });
+    }
+
+    // Handle suggestions fetch error
+    let suggestionsError: string | null = null;
+    if (suggestionsResult.error) {
+        console.error("Error loading suggestions:", suggestionsResult.error);
+        suggestionsError = `Could not load suggestions: ${suggestionsResult.error.message}`;
+    }
+
+    return {
+        keyword: keywordResult.data, // Keyword must exist
+        suggestions: suggestionsResult.data || [],
+        suggestionsError: suggestionsError,
+        keywordId: keywordId, // Pass ID for forms
+        session: session // Pass session info to the page
+    };
+};
+
+// Actions: Handle new suggestion and voting
+export const actions: Actions = {
+    // --- Add Suggestion Action ---
+    createSuggestion: async (event) => {
+        const { request, params, locals: { supabase, safeGetSession:getSession } } = event;
+        const keywordId = params.keywordId;
+
+        const session = await getSession();
+        if (!session) return fail(401, { formId: 'suggestion', error: 'Login required.' });
+        if (!keywordId) return fail(400, { formId: 'suggestion', error: 'Missing keyword ID.' });
+
+        const formData = await request.formData();
+        const swahili_word = formData.get('swahili_word');
+        const description = formData.get('description');
+
+        try {
+            const validatedData = createSuggestionSchema.parse({ swahili_word, description: description || undefined });
+
+            const { error } = await createSuggestion(supabase, {
+                keyword_id: keywordId,
+                swahili_word: validatedData.swahili_word,
+                description: validatedData.description
+            });
+
+            if (error) {
+                return fail(400, { formId: 'suggestion', swahili_word, description, error: error.message });
+            }
+            return { success: true, formId: 'suggestion' };
+
+        } catch (err) {
+             if (err instanceof ZodError) {
+                return fail(400, { formId: 'suggestion', swahili_word, description, errors: err.flatten().fieldErrors });
+            }
+            console.error("Unexpected error creating suggestion:", err);
+            return fail(500, { formId: 'suggestion', swahili_word, description, error: 'Server error.' });
+        }
+    },
+
+    // --- Cast Vote Action ---
+    castVote: async (event) => {
+        const { request, locals: { supabase, safeGetSession:getSession } } = event;
+
+        const session = await getSession();
+        if (!session) return fail(401, { error: 'Login required.' });
+
+        const formData = await request.formData();
+        const suggestionId = formData.get('suggestionId');
+        const voteValue = formData.get('voteValue'); // Will be string "-1", "0", or "1"
+        console.log(suggestionId, voteValue)
+
+        try {
+            const validatedData = castVoteSchema.parse({ suggestionId, voteValue });
+
+            const { error } = await castVote(
+                supabase,
+                validatedData.suggestionId,
+                validatedData.voteValue as -1 | 0 | 1
+            );
+
+            if (error) {
+                 // Return fail, but typically handle vote errors less severely in UI
+                 console.error("Vote Error:", error);
+                 // Could return fail(400, { voteError: error.message, suggestionId: validatedData.suggestionId });
+                 // For now, just log and let the UI update optimistically or on next load
+                 return { voteError: true, suggestionId: validatedData.suggestionId, message: error.message }; // Send back minimal error info
+            }
+             // No explicit success needed, UI should update based on next load or optimistic update
+             return { voteSuccess: true, suggestionId: validatedData.suggestionId };
+
+        } catch (err) {
+             if (err instanceof ZodError) {
+                 const errors = err.flatten().fieldErrors;
+                 console.error("Vote Validation Error:", errors);
+                 return fail(400, { voteError: true, suggestionId, errors }); // Pass back validation errors
+             }
+             console.error("Unexpected error casting vote:", err);
+             return fail(500, { voteError: true, suggestionId, error: 'Server error.' });
+        }
+    }
+};
+// ===========================src/routes/swalang/keywords/[keywordId]/+page.server.ts ends here===========================
+
+
+
+
+// ===========================src/routes/swalang/keywords/[keywordId]/+page.svelte start here===========================
+<script lang="ts">
+    import type { PageData, ActionData } from './$types';
+    import { enhance } from '$app/forms';
+    import Icon from '$lib/components/Icon.svelte';
+    import { invalidateAll } from '$app/navigation';
+    import { renderMarkdown } from '$lib/utils/renderMarkdown';
+	import { castVote } from '$lib/services/swahiliCollaborationService';
+  
+    export let data: PageData;
+    export let form: ActionData;
+  
+    let isSubmittingSuggestion = false;
+    let suggestionFormElement: HTMLFormElement;
+  
+    let optimisticSuggestions = data.suggestions;
+    $: optimisticSuggestions = data.suggestions;
+  
+  
+    function handleSuggestionFormUpdate() {
+      isSubmittingSuggestion = true;
+      return async ({ result, update }: { result: any; update: () => Promise<void> }) => {
+        if (result.type === 'success' && result.status === 200) {
+          suggestionFormElement?.reset();
+          await invalidateAll();
+        }
+        isSubmittingSuggestion = false;
+        await update();
+      };
+    }
+  
+    function handleVoteClick(suggestionId: string, newVote: -1 | 1 | 0) {
+      const index = optimisticSuggestions.findIndex(s => s.id === suggestionId);
+      if (index === -1) return;
+  
+      const currentSuggestion = optimisticSuggestions[index];
+      const currentVote = currentSuggestion.user_vote;
+      const currentScore = currentSuggestion.total_votes;
+  
+      const actualNewVote = (newVote === currentVote) ? 0 : newVote;
+  
+      let optimisticScore = currentScore;
+      if (actualNewVote === 1) {
+        optimisticScore = currentVote === 1 ? currentScore : (currentVote === -1 ? currentScore + 2 : currentScore + 1);
+      } else if (actualNewVote === -1) {
+        optimisticScore = currentVote === -1 ? currentScore : (currentVote === 1 ? currentScore - 2 : currentScore - 1);
+      } else {
+        optimisticScore = currentVote === 1 ? currentScore - 1 : (currentVote === -1 ? currentScore + 1 : currentScore);
+      }
+  
+      optimisticSuggestions = [
+        ...optimisticSuggestions.slice(0, index),
+        { ...currentSuggestion, user_vote: actualNewVote, total_votes: optimisticScore },
+        ...optimisticSuggestions.slice(index + 1)
+      ];
+      castVote(
+                data.supabase,
+                suggestionId,
+                newVote as -1 | 0 | 1
+            )
+    }
+  </script>
+  
+  
+  <div class="container mx-auto p-4 md:p-8">
+    <!-- Breadcrumbs -->
+    <div class="mb-4 text-sm">
+      <a href="/swalang" class="text-blue-600 dark:text-blue-400 hover:underline">Categories</a>
+      {#if data.keyword?.category_id && data.keyword?.category_name}
+        <span class="mx-1 text-gray-400">/</span>
+        <a href={`/swalang/categories/${data.keyword.category_id}`} class="text-blue-600 dark:text-blue-400 hover:underline">{data.keyword.category_name}</a>
+      {/if}
+      <span class="mx-1 text-gray-400">/</span>
+      <span class="text-gray-600 dark:text-gray-300">Keyword</span>
+    </div>
+  
+    {#if data.keyword}
+      <!-- Keyword Header -->
+      <div class="mb-6 pb-4 border-b border-gray-300 dark:border-gray-700">
+        <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">{data.keyword.english_keyword}</h1>
+        {#if data.keyword.description}
+          <p class="mt-2 text-md text-gray-600 dark:text-gray-400">{data.keyword.description}</p>
+        {/if}
+      </div>
+  
+      <h2 class="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-300">Suggestions</h2>
+  
+      {#if data.suggestionsError}
+        <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4" role="alert">
+          <p class="font-bold">Error Loading Suggestions</p>
+          <p>{data.suggestionsError}</p>
+        </div>
+      {/if}
+  
+      <!-- Suggestions List -->
+      <div class="space-y-4 mb-8">
+        {#if optimisticSuggestions.length === 0 && !data.suggestionsError}
+          <p class="text-gray-500 dark:text-gray-400 italic">No suggestions yet. Be the first!</p>
+        {/if}
+  
+        {#each optimisticSuggestions as suggestion (suggestion.id)}
+          <div class="suggestion-card bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 flex space-x-4 items-start">
+            <!-- Vote Controls -->
+            {#if data.session}
+              <form method="POST" action="?/castVote" class="flex flex-col items-center flex-shrink-0 space-y-1">
+                <input type="hidden" name="suggestionId" value={suggestion.id} />
+                <!-- Upvote -->
+                <button
+                  type="submit"
+                  name="voteValue"
+                  value="1"
+                  class="p-1 rounded-full hover:bg-green-100 dark:hover:bg-green-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  class:text-green-600={suggestion.user_vote === 1}
+                  class:dark:text-green-400={suggestion.user_vote === 1}
+                  class:text-gray-400={suggestion.user_vote !== 1}
+                  class:dark:text-gray-500={suggestion.user_vote !== 1}
+                  title="Upvote"
+                  aria-label="Upvote suggestion"
+                  on:click|preventDefault={() => handleVoteClick(suggestion.id, 1)}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 17a.75.75 0 0 1-.75-.75V5.612L5.99 9.47a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1-1.06 1.06L10.75 5.612V16.25A.75.75 0 0 1 10 17Z" clip-rule="evenodd"/>
+                  </svg>
+                </button>
+                <span class="font-bold text-sm text-gray-700 dark:text-gray-300" title="Net votes">{suggestion.total_votes}</span>
+                <!-- Downvote -->
+                <button
+                  type="submit"
+                  name="voteValue"
+                  value="-1"
+                  class="p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  class:text-red-600={suggestion.user_vote === -1}
+                  class:dark:text-red-400={suggestion.user_vote === -1}
+                  class:text-gray-400={suggestion.user_vote !== -1}
+                  class:dark:text-gray-500={suggestion.user_vote !== -1}
+                  title="Downvote"
+                  aria-label="Downvote suggestion"
+                  on:click|preventDefault={() => handleVoteClick(suggestion.id, -1)}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 3a.75.75 0 0 1 .75.75v10.638l3.26-3.868a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.53 11.638a.75.75 0 1 1 1.06-1.06l3.26 3.868V3.75A.75.75 0 0 1 10 3Z" clip-rule="evenodd"/>
+                  </svg>
+                </button>
+              </form>
+            {/if}
+  
+            <!-- Suggestion Content -->
+            <div class="flex-grow min-w-0">
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">{suggestion.swahili_word}</h3>
+              {#if suggestion.description}
+                <div class="prose prose-sm dark:prose-invert max-w-none text-gray-600 dark:text-gray-400">
+                  {#await renderMarkdown(suggestion.description)}
+                    <p class="opacity-50">...</p>
+                  {:then html}
+                    {@html html}
+                  {:catch}
+                    <pre>{suggestion.description}</pre>
+                  {/await}
+                </div>
+              {/if}
+              <p class="text-xs text-gray-400 dark:text-gray-500 mt-2">
+                Submitted by {suggestion.submitter_username || 'User'}
+                on {new Date(suggestion.created_at).toLocaleDateString()}
+                {#if suggestion.is_approved}
+                  <span class="ml-2 px-1.5 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300 rounded-full text-[0.6rem] font-medium">Approved</span>
+                {/if}
+              </p>
+            </div>
+          </div>
+        {/each}
+      </div>
+  
+      <!-- Add Suggestion Form -->
+      {#if data.session}
+        <div class="pt-6 border-t border-gray-300 dark:border-gray-700">
+          <h2 class="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-300">Suggest a Translation</h2>
+          <form
+            bind:this={suggestionFormElement}
+            method="POST"
+            action="?/createSuggestion"
+            use:enhance={handleSuggestionFormUpdate}
+            class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700 space-y-4"
+          >
+            {#if form?.error && form?.formId === 'suggestion'}
+              <p class="text-sm text-red-600 dark:text-red-400 mb-3 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 rounded">
+                {form.error}
+              </p>
+            {/if}
+  
+            <div>
+              <label for="suggestion-swahili" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Swahili Word / Phrase <span class="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                id="suggestion-swahili"
+                name="swahili_word"
+                required
+                maxlength="200"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                aria-describedby="swahili-error"
+                value={form?.formId === 'suggestion' ? form.swahili_word : ''}
+              />
+              {#if form?.errors?.swahili_word && form?.formId === 'suggestion'}
+                <p id="swahili-error" class="mt-1 text-xs text-red-600 dark:text-red-400">{form.errors.swahili_word[0]}</p>
+              {/if}
+            </div>
+  
+            <div>
+              <label for="suggestion-description" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Description / Context (Optional, Markdown Supported)
+              </label>
+              <textarea
+                id="suggestion-description"
+                name="description"
+                rows="4"
+                maxlength="1500"
+                class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white resize-y"
+                aria-describedby="sugg-description-error"
+                value={form?.formId === 'suggestion' ? form.description : ''}
+              ></textarea>
+              {#if form?.errors?.description && form?.formId === 'suggestion'}
+                <p id="sugg-description-error" class="mt-1 text-xs text-red-600 dark:text-red-400">{form.errors.description[0]}</p>
+              {/if}
+            </div>
+  
+            <div>
+              <button
+                type="submit"
+                disabled={isSubmittingSuggestion}
+                class="w-full inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 dark:focus:ring-offset-gray-800"
+              >
+                {#if isSubmittingSuggestion}
+                  <Icon name="loading" class="w-4 h-4 mr-2" /> Submitting...
+                {:else}
+                  Submit Suggestion
+                {/if}
+              </button>
+            </div>
+          </form>
+        </div>
+      {/if}
+    {:else}
+      <p class="text-red-600 dark:text-red-400">Could not load keyword details.</p>
+    {/if}
+  </div>
+  
+  
+  <style>
+      /* Reuse styles from AIChat or define globally */
+      /* ... (prose styles for markdown: pre, code, p, etc.) ... */
+      /* ... pulse animation ... */
+  </style>
+// ===========================src/routes/swalang/keywords/[keywordId]/+page.svelte ends here===========================
+

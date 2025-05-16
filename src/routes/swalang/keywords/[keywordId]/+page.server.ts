@@ -6,7 +6,9 @@ import {
     getKeywordById,
     listSuggestionsByKeyword,
     createSuggestion,
-    castVote
+    castVote,
+    updateKeyword,
+    updateSuggestion
 } from '$lib/services/swahiliCollaborationService';
 
 // Validation schemas for actions
@@ -19,6 +21,21 @@ const castVoteSchema = z.object({
   suggestionId: z.string().uuid(),
   voteValue: z.coerce.number().int().min(-1).max(1), // Coerce form value to number
 });
+
+
+// Schema for updating the keyword itself
+const updateKeywordDetailsSchema = z.object({
+    english_keyword: z.string().trim().min(1, "Keyword cannot be empty.").max(150),
+    description: z.string().trim().max(1000).optional(),
+});
+  
+// Schema for updating a suggestion
+const updateSuggestionSchema = z.object({
+    suggestionId: z.string().uuid("Invalid suggestion ID."),
+    swahili_word: z.string().trim().min(1, "Swahili word cannot be empty.").max(200),
+    description: z.string().trim().max(1500).optional(),
+});
+  
 
 // Load function: Fetch keyword details and its suggestions
 export const load: PageServerLoad = async (event) => {
@@ -140,6 +157,74 @@ export const actions: Actions = {
              }
              console.error("Unexpected error casting vote:", err);
              return fail(500, { voteError: true, suggestionId, error: 'Server error.' });
+        }
+    },
+
+    updateKeywordDetails: async (event) => {
+        const { request, params, locals: { supabase, safeGetSession: getSession } } = event; // Use getSession
+        const keywordId = params.keywordId; // ID of the keyword being viewed/edited
+
+        const session = await getSession();
+        if (!session) return fail(401, { formId: 'updateKeyword', error: 'Login required.' });
+        if (!keywordId) return fail(400, { formId: 'updateKeyword', error: 'Missing keyword ID.'});
+
+        const formData = await request.formData();
+        const english_keyword = formData.get('english_keyword');
+        const description = formData.get('description');
+
+        try {
+            const validatedData = updateKeywordDetailsSchema.parse({ english_keyword, description: description || undefined });
+
+            // RLS on collaborate_swalang_keywords will check if current user can edit this keywordId
+            const { error } = await updateKeyword(supabase, keywordId, {
+                english_keyword: validatedData.english_keyword,
+                description: validatedData.description
+            });
+
+            if (error) {
+                return fail(400, { formId: 'updateKeyword', english_keyword, description, error: error.message, errorCode: error.code });
+            }
+            return { success: true, formId: 'updateKeyword', message: "Keyword details updated!" };
+
+        } catch (err) {
+            if (err instanceof ZodError) {
+                return fail(400, { formId: 'updateKeyword', english_keyword, description, errors: err.flatten().fieldErrors });
+            }
+            console.error("Unexpected error updating keyword details:", err);
+            return fail(500, { formId: 'updateKeyword', english_keyword, description, error: 'Server error.' });
+        }
+    },
+
+    updateSuggestion: async (event) => {
+        const { request, locals: { supabase, safeGetSession: getSession } } = event;
+
+        const session = await getSession();
+        if (!session) return fail(401, { formId: 'updateSuggestion', error: 'Login required.' });
+
+        const formData = await request.formData();
+        const suggestionId = formData.get('suggestionId') as string;
+        const swahili_word = formData.get('swahili_word');
+        const description = formData.get('description');
+
+        try {
+            const validatedData = updateSuggestionSchema.parse({ suggestionId, swahili_word, description: description || undefined });
+
+            // RLS on collaborate_swalang_suggestions will check if user can edit this suggestionId
+            const { error } = await updateSuggestion(supabase, validatedData.suggestionId, {
+                swahili_word: validatedData.swahili_word,
+                description: validatedData.description
+            });
+
+            if (error) {
+                return fail(400, { formId: 'updateSuggestion', suggestionId, swahili_word, description, error: error.message, errorCode: error.code });
+            }
+            return { success: true, formId: 'updateSuggestion', message: "Suggestion updated!" };
+        } catch (err) {
+            if (err instanceof ZodError) {
+                return fail(400, { formId: 'updateSuggestion', suggestionId, swahili_word, description, errors: err.flatten().fieldErrors });
+            }
+            console.error("Unexpected error updating suggestion:", err);
+            return fail(500, { formId: 'updateSuggestion', suggestionId, swahili_word, description, error: 'Server error.' });
         }
     }
 };

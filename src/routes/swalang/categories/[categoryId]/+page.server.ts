@@ -5,13 +5,28 @@ import { z, ZodError } from 'zod';
 import {
     getCategoryById,
     listKeywordsByCategory,
-    createKeyword
+    createKeyword,
+    updateCategory,
+    updateKeyword
 } from '$lib/services/swahiliCollaborationService';
 
 // Schema for adding a keyword
 const createKeywordSchema = z.object({
   english_keyword: z.string().trim().min(1, "Keyword cannot be empty.").max(150, "Keyword too long."),
   description: z.string().trim().max(1000, "Description too long.").optional(),
+});
+
+// Schema for updating category details
+const updateCategoryDetailsSchema = z.object({
+    name: z.string().trim().min(1, "Category name cannot be empty.").max(100),
+    description: z.string().trim().max(500).optional(),
+});
+  
+// Schema for updating an existing keyword
+const updateKeywordSchema = z.object({
+    keywordId: z.string().uuid("Invalid keyword ID."), // ID of the keyword to update
+    english_keyword: z.string().trim().min(1, "Keyword cannot be empty.").max(150),
+    description: z.string().trim().max(1000).optional(),
 });
 
 // Load function: Fetch category details and its keywords
@@ -112,6 +127,73 @@ export const actions: Actions = {
             }
             console.error("Unexpected error creating keyword:", err);
             return fail(500, { english_keyword, description, error: 'An unexpected server error occurred.' });
+        }
+    },
+
+    updateCategoryDetails: async (event) => {
+        const { request, params, locals: { supabase, safeGetSession: getSession } } = event; // Use getSession
+        const categoryId = params.categoryId;
+
+        const session = await getSession();
+        if (!session) return fail(401, { formId: 'updateCategory', error: 'Login required.' });
+        if (!categoryId) return fail(400, { formId: 'updateCategory', error: 'Missing category ID.'});
+
+        const formData = await request.formData();
+        const name = formData.get('name');
+        const description = formData.get('description');
+
+        try {
+            const validatedData = updateCategoryDetailsSchema.parse({ name, description: description || undefined });
+
+            // Service function will use RLS to check if user can update this categoryId
+            const { error } = await updateCategory(supabase, categoryId, {
+                name: validatedData.name,
+                description: validatedData.description
+            });
+
+            if (error) {
+                return fail(400, { formId: 'updateCategory', name, description, error: error.message, errorCode: error.code });
+            }
+            return { success: true, formId: 'updateCategory', message: "Category details updated!" };
+
+        } catch (err) {
+            if (err instanceof ZodError) {
+                return fail(400, { formId: 'updateCategory', name, description, errors: err.flatten().fieldErrors });
+            }
+            console.error("Unexpected error updating category details:", err);
+            return fail(500, { formId: 'updateCategory', name, description, error: 'Server error.' });
+        }
+    },
+
+    updateKeyword: async (event) => {
+        const { request, locals: { supabase, safeGetSession: getSession } } = event;
+
+        const session = await getSession();
+        if (!session) return fail(401, { formId: 'updateKeyword', error: 'Login required.' });
+
+        const formData = await request.formData();
+        const keywordId = formData.get('keywordId') as string;
+        const english_keyword = formData.get('english_keyword');
+        const description = formData.get('description');
+
+        try {
+            const validatedData = updateKeywordSchema.parse({ keywordId, english_keyword, description: description || undefined });
+
+            const { error } = await updateKeyword(supabase, validatedData.keywordId, {
+                english_keyword: validatedData.english_keyword,
+                description: validatedData.description
+            });
+
+            if (error) {
+                return fail(400, { formId: 'updateKeyword', keywordId, english_keyword, description, error: error.message, errorCode: error.code });
+            }
+            return { success: true, formId: 'updateKeyword', message: "Keyword updated!" };
+        } catch (err) {
+            if (err instanceof ZodError) {
+                return fail(400, { formId: 'updateKeyword', keywordId, english_keyword, description, errors: err.flatten().fieldErrors });
+            }
+            console.error("Unexpected error updating keyword:", err);
+            return fail(500, { formId: 'updateKeyword', keywordId, english_keyword, description, error: 'Server error.' });
         }
     }
 };

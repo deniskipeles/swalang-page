@@ -359,6 +359,7 @@ export const fileShareSchema = z.object({
     file_id: z.string().uuid(),
     user_id: z.string().uuid(),
     share_token: z.string(),
+    title: z.string().max(250).nullable(),
     is_active: z.boolean(),
     expires_at: z.coerce.date().nullable(),
     created_at: z.coerce.date(),
@@ -381,8 +382,17 @@ const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklm
 export async function createFileShare(
     client: SupabaseClient<Database>, // Authenticated client of the file owner
     fileId: string,
+    title?: string | null,
     expiresAt?: Date | null // Optional expiry
 ): Promise<{ data?: FileShare, error?: VfsError }> {
+    // Basic validation for title
+    if (title && title.trim().length > 250) {
+        return { error: formatError("Share title is too long (max 250 characters).", null, 'VALIDATION_ERROR') };
+    }
+    if (title !== null && title !== undefined && title.trim().length === 0) {
+        // If title is provided but empty after trimming, treat as null or error
+        title = null; // Or return validation error: `return { error: formatError("Share title cannot be empty if provided.", ...)}`
+    }
     try {
         const { data: { user }, error: userError } = await client.auth.getUser();
         if (userError || !user) {
@@ -397,6 +407,7 @@ export async function createFileShare(
                 file_id: fileId,
                 user_id: user.id, // Owner of the share is the current user
                 share_token: shareToken,
+                title: title || null,
                 is_active: true,
                 expires_at: expiresAt ? expiresAt.toISOString() : null
             })
@@ -411,10 +422,10 @@ export async function createFileShare(
              }
              // get the existing data
              const { data: existingData, error: existingError } = await client.from('file_shares').select().eq('file_id', fileId).maybeSingle();
-             console.log(existingError,existingData)
+            //  console.log(existingError,existingData)
              const validation_existingData = fileShareSchema.safeParse(existingData);
              if (validation_existingData) {
-                return { data: validation_existingData.data };
+                return { data: validation_existingData.data, error_: formatError("A share link already exists for this file. Manage existing link.", dbError, 'SHARE_EXISTS') };
              }
             return { error: formatError("Failed to create share link.", dbError) };
         }

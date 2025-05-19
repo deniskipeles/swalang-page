@@ -188,7 +188,7 @@
         {/if}
         <button title="Rename" on:click|stopPropagation={startRename} disabled={isPerformingNodeAction} class="p-0.5 hover:text-green-600 disabled:opacity-50"><Icon name="edit" /></button>
         <button title="Delete" on:click|stopPropagation={requestDelete} disabled={isPerformingNodeAction} class="p-0.5 hover:text-red-600 disabled:opacity-50"><Icon name="trash" /></button>
-        <ShareButton parentData={data} fileData={node}/>
+        <ShareButton supabaseClient={data.supabase} file={node}/>
      </span>
      {/if}
   </div>

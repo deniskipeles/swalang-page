@@ -570,7 +570,7 @@
               {#if isSaving} <Icon name="loading" class="w-4 h-4 mr-1"/> Saving... {:else} Save {/if}
           </button>
            <!-- Share Button -->
-          <ShareButton {parentData} {fileData}/>
+          <ShareButton supabaseClient={parentData.supabase} file={fileData}/>
            <!-- Toggle Bottom Panel Button -->
            <button
               on:click={toggleBottomPanel}

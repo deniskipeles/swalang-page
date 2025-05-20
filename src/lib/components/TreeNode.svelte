@@ -6,6 +6,7 @@
   import type { PageData } from '../../routes/app/$types';
 	import { goto } from '$app/navigation';
 	import ShareButton from './ShareButton.svelte';
+	import { slide } from 'svelte/transition';
   export let data:PageData
 
   export let node: FileNode;
@@ -13,6 +14,8 @@
   export let selectedFileId: string | null = null;
   export let isSharedView = false; // <<< New Prop
   export let sharedChildren: FileNode[] | undefined = undefined; // <<< Pass pre-loaded children for shared view
+  export let isSmallScreen: boolean = false;
+  export let showShareModal = false
 
   // --- State ---
   let isExpanded = false;
@@ -73,6 +76,40 @@
       dispatch('select', node.id); // Emit selection event
     }
   }
+
+
+  // --- State for Kebab Menu ---
+  let showKebabMenu = false;
+  let kebabButtonElement: HTMLButtonElement | null = null; // For positioning
+
+  // ... (existing state: isRenaming, storeValue, children, isLoadingChildren, etc.) ...
+
+  function toggleKebabMenu(event?: MouseEvent) {
+      event?.stopPropagation(); // Prevent click from propagating to the tree node item
+      showKebabMenu = !showKebabMenu;
+  }
+
+  // Close kebab menu when clicking outside
+  function handleClickOutside(event: MouseEvent) {
+    if (showKebabMenu && kebabButtonElement && !kebabButtonElement.contains(event.target as Node)) {
+        showKebabMenu = false;
+    }
+  }
+
+  // Close kebab on Escape key
+  function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape' && showKebabMenu) {
+          showKebabMenu = false;
+      }
+  }
+
+  // --- Existing Methods (toggleExpand, handleClick, startRename, etc.) ---
+  // Ensure these methods close the kebab menu if it's open and an action is taken
+  function closeKebabAndAct(actionFn: () => void) {
+      showKebabMenu = false;
+      actionFn();
+  }
+
 
   function startRename() {
     // Prevent rename while another action is globally pending maybe?
@@ -135,7 +172,23 @@
       dispatch('error', { message } as VfsError); // Use error dispatch for simplicity here
   }
 
+
+  // --- Responsive State ---
+  let isMobileMenuOpen = false;
+  let innerWidth: number; // To track window width
+  const mobileBreakpoint = 768; // Tailwind's 'md' breakpoint, adjust as needed
+
+  $: isSmallScreen = innerWidth < mobileBreakpoint;
+
+  // Close mobile menu if screen resizes to be larger
+  $: if (!isSmallScreen && isMobileMenuOpen) {
+      isMobileMenuOpen = false;
+  }
+
 </script>
+
+<!-- Svelte Window Event Listeners for Kebab Menu -->
+<svelte:window bind:innerWidth on:click={handleClickOutside} on:keydown={handleEscape}/>
 
 <!-- Template largely the same, but uses store-derived values -->
 <div class="tree-node text-sm">
@@ -180,17 +233,77 @@
     </span>
 
     <!-- Actions -->
-     {#if !isRenaming}
-     <span class="flex-shrink-0 space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        {#if node.is_folder}
-            <button title="New File" on:click|stopPropagation={() => requestCreate(false)} disabled={isPerformingNodeAction} class="p-0.5 hover:text-blue-600 disabled:opacity-50"><Icon name="plus" /></button>
-            <button title="New Folder" on:click|stopPropagation={() => requestCreate(true)} disabled={isPerformingNodeAction} class="p-0.5 hover:text-blue-600 disabled:opacity-50"><Icon name="folder" /></button>
-        {/if}
-        <button title="Rename" on:click|stopPropagation={startRename} disabled={isPerformingNodeAction} class="p-0.5 hover:text-green-600 disabled:opacity-50"><Icon name="edit" /></button>
-        <button title="Delete" on:click|stopPropagation={requestDelete} disabled={isPerformingNodeAction} class="p-0.5 hover:text-red-600 disabled:opacity-50"><Icon name="trash" /></button>
-        <ShareButton supabaseClient={data.supabase} file={node}/>
-     </span>
-     {/if}
+    {#if !isRenaming}
+      <div>
+          {#if !isSmallScreen}
+              <span class="flex flex-shrink-0 space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {#if node.is_folder}
+                      <button title="New File" on:click|stopPropagation={() => closeKebabAndAct(() => requestCreate(false))} disabled={isPerformingNodeAction} class="action-button"><Icon name="plus" /></button>
+                      <button title="New Folder" on:click|stopPropagation={() => closeKebabAndAct(() => requestCreate(true))} disabled={isPerformingNodeAction} class="action-button"><Icon name="folder" /></button>
+                  {/if}
+                  <button title="Rename" on:click|stopPropagation={startRename} disabled={isPerformingNodeAction} class="action-button"><Icon name="edit" /></button>
+                  <button title="Delete" on:click|stopPropagation={() => closeKebabAndAct(requestDelete)} disabled={isPerformingNodeAction} class="action-button"><Icon name="trash" /></button>
+                  <ShareButton supabaseClient={data.supabase} file={node}/>
+              </span>
+          {/if}
+
+          {#if isSmallScreen} 
+              <button
+                  bind:this={kebabButtonElement}
+                  on:click={toggleKebabMenu}
+                  aria-label="More actions"
+                  aria-haspopup="true"
+                  aria-expanded={showKebabMenu}
+                  class="p-1.5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                  <Icon name="kebab" class="w-4 h-4 text-gray-500 dark:text-gray-400"/> 
+              </button>
+          {/if}
+      </div>
+
+      <!-- Kebab Dropdown Menu (Positioned absolutely) -->
+      {#if showKebabMenu}
+      <div
+          transition:slide={{ duration: 150, axis: 'y' }} 
+          class="kebab-dropdown absolute right-1 mt-1 w-40 bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 z-20 py-1 text-sm"
+          role="menu"
+          aria-orientation="vertical"
+          aria-labelledby="kebab-menu-button" 
+      >
+      <ul>
+          <li>
+          {#if node.is_folder}
+              <li>
+                <button role="menuitem" on:click={() => closeKebabAndAct(() => requestCreate(false))} disabled={isPerformingNodeAction} class="flex kebab-menu-item">
+                    <Icon name="plus" class="mr-2"/> New File
+                </button>
+              </li>
+              <li>
+                <button role="menuitem" on:click={() => closeKebabAndAct(() => requestCreate(true))} disabled={isPerformingNodeAction} class="flex kebab-menu-item">
+                    <Icon name="folder" class="mr-2"/> New Folder
+                </button>
+              </li>
+              <div class="h-px bg-gray-200 dark:bg-gray-700 my-1"></div> 
+          {/if}
+          </li>
+          <li>
+          <button role="menuitem" on:click={startRename} disabled={isPerformingNodeAction} class="flex kebab-menu-item">
+              <Icon name="edit" class="mr-2"/> Rename
+          </button>
+          </li>
+          <li>
+            <button role="menuitem" on:click={() => closeKebabAndAct(requestDelete)} disabled={isPerformingNodeAction} class="flex kebab-menu-item text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/50">
+                <Icon name="trash" class="mr-2"/> Delete
+            </button>
+            <div class="h-px bg-gray-200 dark:bg-gray-700 my-1"></div> 
+          </li>
+          <button role="menuitem" on:click={() => closeKebabAndAct(() => showShareModal = true)} disabled={isPerformingNodeAction} class="kebab-menu-item">
+            <ShareButton supabaseClient={data.supabase} btnName="Share" file={node}/> 
+          </button>
+        </ul>
+      </div>
+      {/if}
+    {/if}
   </div>
 
   <!-- Error Message for Children -->
@@ -207,6 +320,7 @@
       {#each children as childNode (childNode.id)}
         <svelte:self
             {data}
+            {isSmallScreen}
             {isSharedView}
             node={childNode}
             level={level + 1}

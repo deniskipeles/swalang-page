@@ -12,9 +12,18 @@
   
     // Determine the file ID to pass to the editor based on selection or root node
     $: editorFileId = selectedSharedFileId ?? (!data.rootFileNode?.is_folder ? data.rootFileNode?.id : null);
+
+    $: content_header = `${data.rootFileNode?.is_folder ? 'Shared Folder' : 'Shared File'}: ${data.shareInfo?.title || data.rootFileNode?.name}`
   
   </script>
-  
+
+  <svelte:head>
+    <title>{data.rootFileNode?.name || 'Shared Content'}</title>
+    <meta name="description" content={content_header}>
+    <!-- <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="https://unpkg.com/tailwindcss@^2/dist/tailwind.min.css" /> -->
+  </svelte:head>
   <div class="flex flex-col h-screen overflow-hidden"> 
   
        <!-- Minimal Header for Shared View -->

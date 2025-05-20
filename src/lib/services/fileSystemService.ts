@@ -540,3 +540,79 @@ export async function deactivateShare(
         return {};
     } catch (e) { return { error: formatError("Error deactivating share.", e as Error) }; }
 }
+
+
+// --- Type for Listed Shared Item ---
+export const sharedFileListItemSchema = z.object({
+    share_token: z.string(),
+    share_title: z.string().nullable(), // Title from file_shares table
+    file_name: z.string(),             // Name from files table
+    file_is_folder: z.boolean(),      // is_folder from files table
+    shared_at: z.coerce.date(),       // created_at from file_shares table
+    // Optionally add original file creator's username if joining profiles
+    // owner_username: z.string().nullable().optional(),
+});
+export type SharedFileListItem = z.infer<typeof sharedFileListItemSchema>;
+
+/**
+ * Lists recently created, active, and non-expired share links.
+ * Includes the shared file's name and type.
+ */
+export async function listRecentPublicShares(
+    client: SupabaseClient<Database> = globalSupabaseClient, // Can use unauthenticated client
+    limit: number = 5
+): Promise<{ data?: SharedFileListItem[], error?: VfsError }> {
+    try {
+        const { data, error: dbError } = await client
+            .from('file_shares')
+            .select(`
+                share_token,
+                title,
+                shared_at:created_at,
+                file:files!inner (
+                    name,
+                    is_folder
+                )
+                `)
+                // Optional: Join with profiles to get sharer's username
+                // sharer_profile:user_id!inner ( username )
+            .eq('is_active', true) // Only active shares
+            .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`) // Not expired or no expiry
+            .order('created_at', { ascending: false }) // Most recent shares first
+            .limit(limit);
+
+        if (dbError) {
+            // Handle potential error if 'files' join via 'file_shares_file_id_fkey' isn't found by PostgREST
+            if (dbError.message.includes("relationship") && dbError.message.includes("'files'")) {
+                 console.error("PostgREST schema cache might be stale. Try reloading schema in Supabase dashboard -> API settings. Error:", dbError);
+                 return { error: formatError("Database relationship error fetching recent shares. Please try again later.", dbError, 'DB_RELATIONSHIP_ERROR')};
+            }
+            return { error: formatError("Failed to list recent shares.", dbError) };
+        }
+        if (!data) {
+            return { data: [] }; // No recent shares found
+        }
+
+        // Map data to the expected structure
+        const mappedData: SharedFileListItem[] = data.map(item => ({
+            share_token: item.share_token,
+            share_title: item.title, // Title from the share record
+            file_name: (item.file as { name: string, is_folder: boolean } | null)?.name || 'Unknown File',
+            file_is_folder: (item.file as { name: string, is_folder: boolean } | null)?.is_folder || false,
+            shared_at: new Date(item.shared_at), // Already aliased 'created_at' as 'shared_at'
+            // owner_username: (item.sharer_profile as { username: string } | null)?.username,
+        }));
+
+        // Validate with Zod
+        const validation = z.array(sharedFileListItemSchema).safeParse(mappedData);
+        if (!validation.success) {
+            console.warn("Recent shares list validation failed", validation.error);
+            return { data: mappedData }; // Return potentially invalid data
+        }
+
+        return { data: validation.data };
+
+    } catch (e) {
+        return { error: formatError("An unexpected error occurred listing recent shares.", e as Error) };
+    }
+}

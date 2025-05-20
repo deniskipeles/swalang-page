@@ -118,6 +118,44 @@
             {/if}
         </section>
 
+        <!-- Recently Shared Files Section -->
+        <section class="lg:col-span-1 space-y-3">
+            <h2 class="text-xl font-semibold border-b pb-2 mb-3 dark:border-gray-700 text-gray-700 dark:text-gray-300">
+                Recently Shared
+            </h2>
+            {#if data.recentShares.length > 0}
+                <ul class="space-y-1.5">
+                    {#each data.recentShares as share (share.share_token)}
+                        <li>
+                            <a href={`/share/${share.share_token}`} class="block text-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 p-1 rounded group">
+                                <div class="flex items-center space-x-2">
+                                    <span class="flex-shrink-0">
+                                        <Icon name={share.file_is_folder ? 'folder' : (share.file_name.endsWith('.sw') ? 'swalang' : 'file')} class="w-4 h-4 text-gray-500 dark:text-gray-400"/>
+                                    </span>
+                                    <div class="flex-grow min-w-0">
+                                        <span class="font-medium text-gray-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate block" title={share.share_title || share.file_name}>
+                                            {share.share_title || share.file_name}
+                                        </span>
+                                        <time datetime={share.shared_at?.toString()} class="text-xs text-gray-400 dark:text-gray-500">
+                                            Shared {formatDate(share.shared_at, { month: 'short', day: 'numeric' })}
+                                        </time>
+                                    </div>
+                                </div>
+                            </a>
+                        </li>
+                    {/each}
+                </ul>
+                {#if data.recentShares.length >= 5} <!-- Assuming HOME_PAGE_LIMIT is 5 -->
+                     <div class="pt-1 text-right">
+                        <!-- No dedicated "More Shares" page for now, but could be added -->
+                        <!-- <a href="/shares" class="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium">More Shares →</a> -->
+                     </div>
+                {/if}
+            {:else}
+                <p class="text-sm text-gray-500 dark:text-gray-400 italic">No files recently shared.</p>
+            {/if}
+        </section>
+
     </div>
 
     <!-- Removed dedicated Collaborate section, integrated CTA into Welcome section -->

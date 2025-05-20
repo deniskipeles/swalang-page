@@ -7,6 +7,7 @@
 	import { slide } from 'svelte/transition'; // For smooth dropdown animation
 	import type { Session } from '@supabase/supabase-js';
 	import Icon from '$lib/components/Icon.svelte';
+	import { page } from '$app/state';
 
 	let { data, children } = $props();
 	let { session, supabase } = $derived(data);
@@ -78,6 +79,7 @@
 	}
 
 	let userDisplayInfo = $derived(getUserDisplay(data?.session?.user));
+	let logo = $derived(`${page.url.origin}/favicon.png`);
 </script>
 
 <div class="flex min-h-screen flex-col">
@@ -206,3 +208,15 @@
 
 	{@render children()}
 </div>
+
+
+
+
+
+<svelte:head>
+  <title>Swalang Programming</title>
+  <meta name="description" content='Swahili based programming language with pythonic syntax' />
+  <link rel="apple-touch-icon" sizes="76x76" href={logo} />
+  <link rel="icon" type="image/svg+xml" href={logo}/>
+  <link rel="icon" type="image/png" href={logo}/>
+</svelte:head>

@@ -94,8 +94,8 @@
 					{#each data.categories as category (category.id)}
 						{#if editingCategoryId === category.id}
 							<!-- Edit Form for This Category -->
-							<form method="POST" action="?/updateCategory" use:enhance={handleUpdateForm} class="p-4 bg-yellow-50 dark:bg-gray-700 rounded-lg shadow border border-yellow-300 dark:border-yellow-600 space-y-3">
-								<input type="hidden" name="id" value={category.id} />
+							<form method="POST" action={`/swalang/categories/${category.id}/?/updateCategoryDetails`} use:enhance={handleUpdateForm} class="p-4 bg-yellow-50 dark:bg-gray-700 rounded-lg shadow border border-yellow-300 dark:border-yellow-600 space-y-3">
+								<!-- <input type="hidden" name="id" value={category.id} /> -->
 								{#if form?.error && form?.formId === 'updateCategory' && form?.id === category.id}<p class="error-box">{form.error}</p>{/if}
 								<div>
 									<label for={`edit-name-${category.id}`} class="label-style">Name *</label>

@@ -236,8 +236,10 @@
                    disabled={isSubmitting}
                    class="inline-flex items-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 dark:focus:ring-offset-gray-800"
                >
-                   {#if isSubmitting} <Icon name="loading" class="w-4 h-4 mr-2"/> Saving...
-                   {:else} <Icon name="loading" class="w-4 h-4 mr-2"/> {data.isEditing ? 'Save Changes' : 'Create Page'}
+                   {#if isSubmitting} 
+                        <Icon name="loading" class="w-4 h-4 mr-2"/> Saving...
+                   {:else} 
+                        <Icon name="save" class="w-4 h-4 mr-2"/> {data.isEditing ? 'Save Changes' : 'Create Page'}
                    {/if} <!-- Replace icon -->
                </button>
           </div>

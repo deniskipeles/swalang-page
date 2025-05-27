@@ -138,6 +138,10 @@ export const actions: Actions = {
             }
 
         } catch (err) {
+            if(err?.status == 303) {
+                console.log(err?.location)
+                throw redirect(303, err?.location);
+            }
             if (err instanceof ZodError) {
                 const errors = err.flatten().fieldErrors;
                 return fail(400, { ...formDataObj, errors });
